@@ -24,7 +24,7 @@ namespace ZzServer.Battle
 		{
 			Vector3_Hzy tarVec;
 			Vector3_Hzy srcVec = skillObj.GetPos();
-			var tList = skillObj.GetTarListnearby().Where(t => !t.IsDead());
+			var tList = skillObj.GetTarListNearby().Where(t => !t.IsDead());
 			List<SkillObj> tarList = new List<SkillObj>();
 			double srcDirRadian = skillObj.GetDirRadian();
 			foreach (var tar in tList)

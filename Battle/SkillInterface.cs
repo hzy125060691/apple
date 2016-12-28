@@ -246,6 +246,7 @@ namespace ZzServer.Battle
 	{
 		int GetID();
 		int GetParentID();
+		void SetParentID(int id);
 		bool CommonCheck();
 		double GetNowTime();
 		double GetDeltaTime();
@@ -281,5 +282,6 @@ namespace ZzServer.Battle
 	{
 		void NotifyBattleTime(float timeMS);
 		void Tick_Battle_Late();
+		void Tick_Battle();
 	}
 }

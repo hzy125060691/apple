@@ -24,7 +24,7 @@ namespace ZzServer.Battle
 				if(CheckTarget(self, tar))
 				{
 					var tarCollision = tar.GetCollision();
-					if (selfCollision.CollisionDetect(tarCollision))
+					if (tarCollision != null && selfCollision.CollisionDetect(tarCollision))
 					{
 						var ret = OnCollide(self, tar);
 					}

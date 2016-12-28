@@ -9,7 +9,7 @@ namespace ZzServer.Battle
 	[hzyBattleBase]
 	public interface FrontRectTargetSelect
 	{
-		IEnumerable<SkillObj> GetTarListnearby();
+		IEnumerable<SkillObj> GetTarListNearby();
 	}
 	[hzyBattleBase]
 	public class FrontRect : TargetSelect
@@ -32,7 +32,7 @@ namespace ZzServer.Battle
 		{
 			Vector3_Hzy tarVec;
 			Vector3_Hzy srcVec = skillObj.GetPos();
-			var tList = skillObj.GetTarListnearby().Where(t => !t.IsDead());
+			var tList = skillObj.GetTarListNearby().Where(t => !t.IsDead());
 			List<SkillObj> tarList = new List<SkillObj>();
 			double srcDirRadian = skillObj.GetDirRadian();
 			foreach (var tar in tList)
