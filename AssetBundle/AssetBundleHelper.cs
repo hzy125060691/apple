@@ -12,24 +12,31 @@ using UnityEditor;
 public class AssetBundleHelper : MonoBehaviour
 {
 	public const string AssetBundelExtName = @".assetbundle";           //assetbundle的扩展名
+	public const string WindowsSimplifyName = @"Microsoft";
+	public const string AndroidSimplifyName = @"Google";
+	public const string OSXSimplifyName = @"Apple";
 
-	private static List<KeyValuePair<string, Action<GameObject>>> NeedLoadList = new List<KeyValuePair<string, Action<GameObject>>>();
+	private static Queue<KeyValuePair<string, Action<UnityEngine.Object>>> NeedLoadQueue = new Queue<KeyValuePair<string, Action<UnityEngine.Object>>>();
 
-	private static LockAndObj<AssetBundleManifest> manifest_Sum = new LockAndObj<AssetBundleManifest>();
+	private static AssetBundleManifest manifest = null;
 	//private static object manifest_Sum_LockObj = new object();
 
-	private static LockAndObj<Dictionary<string, AssetBundle>> AssetBundleDic = new LockAndObj<Dictionary<string, AssetBundle>>() { tar = new Dictionary<string, AssetBundle>()};
+	private static AssetBundleRecord AssetBundleDic = new AssetBundleRecord();
+	//private static Dictionary<string, AssetBundle> AssetBundleDic = new Dictionary<string, AssetBundle>();
 	//private static Dictionary<string, AssetBundle> AssetBundleDic = new Dictionary<string, AssetBundle>();
 	public static AssetBundleHelper Ins = null;
 	private Coroutine LoadResCor = null;
-
-	void Start()
+	void Awake()
 	{
+		DontDestroyOnLoad(this);
 		Ins = this;
 	}
-	public void PushResToNeedLoad(string path, Action<GameObject> callback)
+// 	void Start()
+// 	{
+// 	}
+	public void PushResToNeedLoad(string path, Action<UnityEngine.Object> callback)
 	{
-		NeedLoadList.Add(new KeyValuePair<string, Action<GameObject>>(path, callback));
+		NeedLoadQueue.Enqueue(new KeyValuePair<string, Action<UnityEngine.Object>>(path, callback));
 		if (LoadResCor == null)
 		{
 			LoadResCor = StartCoroutine(LoadResourceAsyn());
@@ -37,11 +44,7 @@ public class AssetBundleHelper : MonoBehaviour
 	}
 	void Destory()
 	{
-		foreach(var ab in AssetBundleDic.tar)
-		{
-			ab.Value.Unload(false);
-		}
-		AssetBundleDic.tar.Clear();
+		AssetBundleDic.Clear();
 	}
 	/// <summary>
 	/// 获取StreamingAssets路径
@@ -88,15 +91,15 @@ public class AssetBundleHelper : MonoBehaviour
 		{
 			case RuntimePlatform.WindowsEditor:
 			case RuntimePlatform.WindowsPlayer:
-				platformName = "Microsoft";
+				platformName = WindowsSimplifyName;
 				break;
 			case RuntimePlatform.OSXEditor:
 			case RuntimePlatform.OSXPlayer:
 			case RuntimePlatform.IPhonePlayer:
-				platformName = "Apple";
+				platformName = OSXSimplifyName;
 				break;
 			case RuntimePlatform.Android:
-				platformName = "Google";
+				platformName = AndroidSimplifyName;
 				break;
 			default:
 				platformName = "Default";
@@ -175,6 +178,7 @@ public class AssetBundleHelper : MonoBehaviour
 				formatPath = path.Replace('\\', '/');
 				break;
 			case RuntimePlatform.Android:
+				formatPath = path.Replace('\\', '/');
 				//platformName = "Google";
 				break;
 			default:
@@ -192,12 +196,12 @@ public class AssetBundleHelper : MonoBehaviour
 	/// <returns></returns>
 	private IEnumerator LoadResourceAsyn()
 	{
-		while(NeedLoadList.Count > 0)
+		while(NeedLoadQueue.Count > 0)
 		{
-			var needLoad = NeedLoadList[0];
+			var needLoad = NeedLoadQueue.Dequeue();
 			string loadResourceName = needLoad.Key;
 			var callback = needLoad.Value;
-			GameObject newObj = null;
+			UnityEngine.Object newObj = null;
 			if (UseAssetBundle)
 			{
 				//通过bundle加载
@@ -205,9 +209,8 @@ public class AssetBundleHelper : MonoBehaviour
 				string streamingAssetsPath = (PathToPlatformFormat(GetStreamingAssetsPath()));
 				string platformBundlePath = (Combine(streamingAssetsPath, GetPlatformPathName()));
 				string platformManifestPath = PathToFileUri(Combine(platformBundlePath, GetPlatformPathName()));
-				lock (manifest_Sum.LockObj)
 				{
-					if (manifest_Sum.tar == null)
+					if (manifest == null)
 					{
 						using (WWW www = new WWW(platformManifestPath))
 						{
@@ -221,8 +224,8 @@ public class AssetBundleHelper : MonoBehaviour
 								var bundle = www.assetBundle;
 								if (bundle != null)
 								{
-									manifest_Sum.tar = (AssetBundleManifest)bundle.LoadAsset("AssetBundleManifest");
-									if (manifest_Sum.tar != null)
+									manifest = (AssetBundleManifest)bundle.LoadAsset("AssetBundleManifest");
+									if (manifest != null)
 									{
 									}
 									else
@@ -241,19 +244,18 @@ public class AssetBundleHelper : MonoBehaviour
 					}
 				}
 				//如果这个时候还为空直接终止
-				if (manifest_Sum.tar == null)
+				if (manifest == null)
 				{
 					yield break;
 				}
 				{
-					string[] dps = manifest_Sum.tar.GetAllDependencies(LoadBundleName);
+					string[] dps = manifest.GetAllDependencies(LoadBundleName);
 					//AssetBundle[] abs = new AssetBundle[dps.Length];
 					for (int i = 0; i < dps.Length; i++)
 					{
 						string nameTmp = PathToFileUri(Combine(platformBundlePath, dps[i]));
-						lock (AssetBundleDic.LockObj)
 						{
-							if (!AssetBundleDic.tar.ContainsKey(nameTmp))
+							if (!AssetBundleDic.ContainsKey(nameTmp))
 							{
 								using (WWW wwwTmp = new WWW(nameTmp))
 								{
@@ -264,15 +266,14 @@ public class AssetBundleHelper : MonoBehaviour
 									}
 									//abs[i] = wwwTmp.assetBundle;
 									//Debug.Log(nameTmp + " : " + loadResourceName);
-									AssetBundleDic.tar.Add(nameTmp, wwwTmp.assetBundle);
+									AssetBundleDic.Add(nameTmp, wwwTmp.assetBundle);
 								}
 							}
 						}
 					}
 					string name = PathToFileUri(Combine(platformBundlePath, LoadBundleName));
-					lock (AssetBundleDic.LockObj)
 					{
-						if (!AssetBundleDic.tar.ContainsKey(name))
+						if (!AssetBundleDic.ContainsKey(name))
 						{
 							using (WWW wwwtar = new WWW(name))
 							{
@@ -286,7 +287,7 @@ public class AssetBundleHelper : MonoBehaviour
 									var bundleTar = wwwtar.assetBundle;
 									if (bundleTar != null)
 									{
-										AssetBundleDic.tar.Add(name, bundleTar);
+										AssetBundleDic.Add(name, bundleTar);
 									}
 									else
 									{
@@ -296,14 +297,14 @@ public class AssetBundleHelper : MonoBehaviour
 							}
 						}
 					}
-					if (!AssetBundleDic.tar.ContainsKey(name))
+					if (!AssetBundleDic.ContainsKey(name))
 					{
 						yield break;
 					}
-					var obj = AssetBundleDic.tar[name].LoadAsset(loadResourceName);
+					var obj = AssetBundleDic.GetAssetBundle(name).LoadAsset(loadResourceName);
 					if (obj != null)
 					{
-						newObj = GameObject.Instantiate(obj) as GameObject;
+						newObj = Instantiate(obj) as UnityEngine.Object;
 					}
 					else
 					{
@@ -323,15 +324,16 @@ public class AssetBundleHelper : MonoBehaviour
 			{
 #if UNITY_EDITOR
 				yield return null;
-				var obj = AssetDatabase.LoadAssetAtPath<GameObject>(loadResourceName);
+				var obj = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(loadResourceName);
 				if (obj != null)
 				{
-					newObj = GameObject.Instantiate(obj) as GameObject;
+					newObj = Instantiate(obj) as UnityEngine.Object;
 				}
 				else
 				{
 					Debug.Assert(false, "obj == null here ");
 				}
+				Debug.Log("AssetDataBase.load");
 #endif
 			}
 
@@ -343,7 +345,6 @@ public class AssetBundleHelper : MonoBehaviour
 			{
 				Debug.Assert(false, "newObj == null ");
 			}
-			NeedLoadList.RemoveAt(0);
 		}
 		LoadResCor = null;
 	}
@@ -351,14 +352,67 @@ public class AssetBundleHelper : MonoBehaviour
 	/// UseAssetBundle用来设置编辑器下是否使用AB模式，非编辑器只能用AB模式
 	/// </summary>
 #if UNITY_EDITOR
-	public static bool UseAssetBundle = true;
+	public static bool UseAssetBundle
+	{
+		get
+		{
+			return EditorPrefs.GetBool(AssetBundleHelper.UseAssetBundleKey);
+		}
+		set
+		{
+			EditorPrefs.SetBool(AssetBundleHelper.UseAssetBundleKey, value);
+		}
+	}
+	public const string UseAssetBundleKey = "UseAssetBundle";
 #else
 	public const bool UseAssetBundle = true;
 #endif
 }
-public class LockAndObj<T> where T : class
+
+public class AssetBundleRecord
 {
-	public object LockObj = new object();
-	public T tar = null;
+	private Dictionary<string, AssetBundle> assetBundleDic = new Dictionary<string, AssetBundle>();
+	private List<KeyValuePair<string, string>> assetBundleUseTime = new List<KeyValuePair<string, string>>();
+
+	public bool ContainsKey(string key)
+	{
+		assetBundleUseTime.Add(new KeyValuePair<string, string>(key, DateTime.Now.ToString() + ":ContainsKey"));
+		PrintLog();
+		return assetBundleDic.ContainsKey(key);
+	}
+
+	public AssetBundle GetAssetBundle(string key)
+	{
+// 		if (!ContainsKey(key))
+// 		{
+// 			return null;
+// 		}
+		assetBundleUseTime.Add(new KeyValuePair<string, string>(key, DateTime.Now.ToString() + ":Get"));
+		PrintLog();
+		return assetBundleDic[key];
+	}
+	public void Add(string key, AssetBundle bundle)
+	{
+		assetBundleDic.Add(key, bundle);
+		assetBundleUseTime.Add(new KeyValuePair<string, string>(key, DateTime.Now.ToString() + ":Add"));
+		PrintLog();
+	}
+	private void PrintLog()
+	{
+		// 		foreach (var msg in assetBundleUseTime[assetBundleUseTime.Count-1])
+		// 		{
+		// 			Debug.Log(msg.Key + ": " + msg.Value);
+		// 		}
+// 		var msg = assetBundleUseTime[assetBundleUseTime.Count - 1];
+// 		Debug.Log(msg.Key + ": " + msg.Value);
+	}
+	public void Clear()
+	{
+		foreach (var ab in assetBundleDic)
+		{
+			ab.Value.Unload(false);
+		}
+		assetBundleDic.Clear();
+	}
 }
 

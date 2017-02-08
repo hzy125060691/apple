@@ -7,12 +7,49 @@ using System.Xml;
 using System;
 using System.Linq;
 /// <summary>
-/// 这个类只能在编辑器里使用，用来创建assetbundle和在打包前将assetbundle移动到StreamingAssets下制定位置。
+/// 这个类只能在编辑器里使用，用来创建assetbundle和在打包前将assetbundle移动到StreamingAssets下指定位置。
 /// </summary>
-public class BulidBundleManager
+public class BuildBundleManager
 {
-	public const string NeedBuildAssetBundlePath = @"Assets/__ArtRes/reS/Prefabs";			//将要打包的目录，这个可以随意更改
-	public const string AssetBundlePath = @"Assets/AssetBundles";							//打包输出目录，这个目录目前看来并不需要修改
+	public const string needBuildAssetBundlePath = @"Assets/Resources";				//将要打包的目录，这个可以随意更改
+	public const string assetBundlePath = @"AssetBundles";                          //打包输出目录，这个目录目前看来并不需要修改
+
+	#region 默认的某些属性
+	public const string AssetBundlePathKey = @"AssetBundlePath";
+	public static string AssetBundlePath
+	{
+		get
+		{
+			var tar = EditorPrefs.GetString(AssetBundlePathKey);
+			if(tar == null || tar.Equals(""))
+			{
+				return assetBundlePath;
+			}
+			return tar;
+		}
+		set
+		{
+			EditorPrefs.SetString(AssetBundlePathKey, value);
+		}
+	}
+	public const string NeedBuildAssetBundlePathKey = @"NeedBuildAssetBundlePath";
+	public static string NeedBuildAssetBundlePath
+	{
+		get
+		{
+			var tar = EditorPrefs.GetString(NeedBuildAssetBundlePathKey);
+			if (tar == null || tar.Equals(""))
+			{
+				return needBuildAssetBundlePath;
+			}
+			return tar;
+		}
+		set
+		{
+			EditorPrefs.SetString(NeedBuildAssetBundlePathKey, value);
+		}
+	}
+	#endregion
 
 	#region 这一部分是生成的XML相关的，可以改也可以不改，人能看懂就行
 	public const string ABVersionInfoName = @"ABVersionInfo.xml";							//输出所有ab信息的文件名
@@ -28,6 +65,10 @@ public class BulidBundleManager
 	private const string xmlNode_OldHashName = @"OldHash";									//输出信息中XML node的名字
 	private const string xmlNode_NewHasHName = @"NewHash";									//输出信息中XML node的名字
 	#endregion
+
+	public const string DateFormat = @"yyyy-MM-dd HH:mm:ss.fff";
+	public static string DateTimeString = @"";
+
 	/// <summary>
 	/// 根据build assetbundle后返回的AssetBundleManifest 生成一个本次AssetBundle的信息文件，包含所有的AssetBundle文件名与其hash值。
 	/// </summary>
@@ -35,13 +76,13 @@ public class BulidBundleManager
 	/// <param name="versionName">一般是平台名字，也可以加其他文件夹在</param>
 	private static void GenABVersionInfo(AssetBundleManifest mf, string versionName)
 	{
-		string filepath = (AssetBundleHelper.Combine(GetAssetBundlePath(versionName), ABVersionInfoName));
+		string filepath = (GetABInfoXmlPath(versionName));
 		XmlDocument xmlDoc = null;
 		//创建XML文档实例  
 		xmlDoc = new XmlDocument();
 		XmlElement AllRoot = xmlDoc.CreateElement(xmlNode_AssetBundlesName);
 		//创建个时间属性，可以更直观的对比不同版本的
-		AllRoot.SetAttribute(xmlAttribute_CreateTime, DateTime.Now.ToString());
+		AllRoot.SetAttribute(xmlAttribute_CreateTime, DateTimeString);
 		xmlDoc.AppendChild(AllRoot);
 
 		//输出结果按名字排序，以后要对比两个文件也方面一些
@@ -65,7 +106,7 @@ public class BulidBundleManager
 	private static Dictionary<string, string> GetABVersionInfo(string versionName)
 	{
 		var list = new Dictionary<string, string>();
-		string filepath = (AssetBundleHelper.Combine(AssetBundlePath, versionName, ABVersionInfoName));
+		string filepath = (GetABInfoXmlPath(versionName));
 		XmlDocument xmlDoc = new XmlDocument();
 		if(File.Exists(filepath))
 		{
@@ -126,13 +167,13 @@ public class BulidBundleManager
 		changedAB.OrderBy(n => n);
 
 		//创建XML文档实例  
-		string filepath = (AssetBundleHelper.Combine(GetAssetBundlePath(versionName), ABDifferInfoName));
+		string filepath = GetDifferXmlPath(versionName);
 		XmlDocument xmlDoc = new XmlDocument();
 		XmlElement AllRoot = xmlDoc.CreateElement(xmlNode_AssetBundlesName);
 		xmlDoc.AppendChild(AllRoot);
 
 		//创建个时间属性，可以更直观的对比不同版本的
-		AllRoot.SetAttribute(xmlAttribute_CreateTime, DateTime.Now.ToString());
+		AllRoot.SetAttribute(xmlAttribute_CreateTime, DateTimeString);
 
 		XmlElement NewRoot = xmlDoc.CreateElement(xmlNode_NewAssetBundlesName);
 		AllRoot.AppendChild(NewRoot);
@@ -165,7 +206,25 @@ public class BulidBundleManager
 		//直接覆盖上次结果
 		xmlDoc.Save(filepath);
 	}
-
+	/// <summary>
+	/// 根据versionName获得输出AB差异文件的路径
+	/// </summary>
+	/// <param name="versionName">一般是平台名字，也可以加其他文件夹在</param>
+	/// <returns>输出路径</returns>
+	public static string GetDifferXmlPath(string versionName)
+	{
+		return (AssetBundleHelper.Combine(GetAssetBundlePath(versionName), ABDifferInfoName));
+	}
+	/// <summary>
+	/// 根据versionName获得输出AB信息文件的路径
+	/// </summary>
+	/// <param name="versionName">一般是平台名字，也可以加其他文件夹在</param>
+	/// <returns>输出路径</returns>
+	public static string GetABInfoXmlPath(string versionName)
+	{
+		return AssetBundleHelper.Combine(AssetBundlePath, versionName, ABVersionInfoName);
+	}
+	
 	/// <summary>
 	/// 获得路径下所有非meta文件，递归搜索文件夹
 	/// </summary>
@@ -213,7 +272,7 @@ public class BulidBundleManager
 		{
 			//var relativePath = Path.Combine();
 			var dps = AssetDatabase.GetDependencies(file.Key);
-			foreach(var dp in dps)
+			foreach(var dp in dps.Where(d=>!d.EndsWith(".cs")))//脚本文件排除
 			{
 				if(dicDependencies.ContainsKey(dp))
 				{
@@ -358,9 +417,17 @@ public class BulidBundleManager
 		RuntimePlatform runtimePlatform = BuildTargetToRuntimePlatform(bt);
 		string versionName = AssetBundleHelper.RuntimePlatformToSimplifyName(runtimePlatform);
 		string streamingAssetsPath = AssetBundleHelper.GetStreamingAssetsPath();
-		if (Directory.Exists(streamingAssetsPath))
+		//清理三个文件夹
+		string[] deletePaths = new string[3];
+		deletePaths[0] = AssetBundleHelper.Combine(AssetBundleHelper.GetStreamingAssetsPath(), AssetBundleHelper.RuntimePlatformToSimplifyName(RuntimePlatform.WindowsEditor));
+		deletePaths[1] = AssetBundleHelper.Combine(AssetBundleHelper.GetStreamingAssetsPath(), AssetBundleHelper.RuntimePlatformToSimplifyName(RuntimePlatform.OSXEditor));
+		deletePaths[2] = AssetBundleHelper.Combine(AssetBundleHelper.GetStreamingAssetsPath(), AssetBundleHelper.RuntimePlatformToSimplifyName(RuntimePlatform.Android));
+		foreach(var path in deletePaths)
 		{
-			Directory.Delete(streamingAssetsPath, true);
+			if (Directory.Exists(path))
+			{
+				Directory.Delete(path, true);
+			}
 		}
 		string tarPath = AssetBundleHelper.Combine(AssetBundleHelper.GetStreamingAssetsPath(), versionName);
 		Directory.CreateDirectory(tarPath);
@@ -453,6 +520,7 @@ public class BulidBundleManager
 	/// <param name="bIncrementalUpdate">是否增量打包，现在还没有什么用</param>
 	private static void BuildAssetBundle(BuildAssetBundleOptions options, BuildTarget bt, bool bIncrementalUpdate = true)
 	{
+		DateTimeString = DateTime.Now.ToString(DateFormat);
 		RuntimePlatform runtimePlatform = BuildTargetToRuntimePlatform(bt);
 		string versionName = AssetBundleHelper.RuntimePlatformToSimplifyName(runtimePlatform);
 		string path = GetAssetBundlePath(versionName);
@@ -497,26 +565,278 @@ public class BulidBundleManager
 	}
 	
 
-	[MenuItem("bundle/BuildAB_Win64")]
+	[MenuItem("AssetBundle/BuildAB_Win64")]
 	public static void BuildWin64()
 	{
 		BuildAssetBundle(BuildAssetBundleOptions.None, BuildTarget.StandaloneWindows64);
 	}
-	[MenuItem("bundle/moveAB_win64")]
+	[MenuItem("AssetBundle/moveAB_win64")]
 	public static void MoveTest()
 	{
 		MoveAssetBundleToStreamingAssets(BuildTarget.StandaloneWindows64);
 	}
 
-	[MenuItem("bundle/BuildAB_IOS")]
+	[MenuItem("AssetBundle/BuildAB_IOS")]
 	public static void BuildIOS()
 	{
 		BuildAssetBundle(BuildAssetBundleOptions.None, BuildTarget.iOS);
 	}
-	[MenuItem("bundle/moveAB_IOS")]
+	[MenuItem("AssetBundle/moveAB_IOS")]
 	public static void MoveIOS()
 	{
 		MoveAssetBundleToStreamingAssets(BuildTarget.iOS);
+	}
+	[MenuItem("AssetBundle/BuildAB_Android")]
+	public static void BuildAndroid()
+	{
+		BuildAssetBundle(BuildAssetBundleOptions.None, BuildTarget.Android);
+	}
+	[MenuItem("AssetBundle/moveAB_Android")]
+	public static void MoveAndroid()
+	{
+		MoveAssetBundleToStreamingAssets(BuildTarget.Android);
+	}
+}
+/// <summary>
+/// 这是个可以方便设置编辑下是否使用AssetBundle的类
+/// </summary>
+public class MyEditor : EditorWindow
+{
+	[MenuItem("AssetBundle/设置编辑器下AssetBundle的一些信息")]
+	static void AddWindow()
+	{
+		//创建窗口
+		Rect wr = new Rect(0, 0, 1000, 800);
+		MyEditor window = (MyEditor)EditorWindow.GetWindowWithRect(typeof(MyEditor), wr, true, "设置编辑器下AssetBundle的一些信息");
+		window.Show();
+
+	}
+	//输入文字的内容
+	private GUIStyle titleSytle = null;
+	private GUIStyle NormalSytle = null;
+	private GUIStyle TextFieldSytle = null;
+	private GUIStyle RedTextFieldSytle = null;
+	private GUIStyle ResetButtonSytle = null;
+	private GUIStyle ToggleSytle = null;
+
+	private const int TabSize = 70;
+	private const string TabStr = "	";
+	private const int LayoutOneHeight = 60;
+	void Awake()
+	{
+		titleSytle = new GUIStyle(EditorStyles.boldLabel);
+		titleSytle.fontSize = 20;
+
+		NormalSytle = new GUIStyle(EditorStyles.boldLabel);
+		NormalSytle.fontSize = 15;
+
+		TextFieldSytle = new GUIStyle(EditorStyles.textField);
+		TextFieldSytle.fontSize = 15;
+
+		RedTextFieldSytle = new GUIStyle(EditorStyles.textField);
+		RedTextFieldSytle.fontSize = 15;
+		RedTextFieldSytle.normal.textColor = Color.red;
+
+		ResetButtonSytle = new GUIStyle(EditorStyles.miniButton);
+		ResetButtonSytle.fontSize = 15;
+
+		ToggleSytle = new GUIStyle(EditorStyles.toggle);
+		//ToggleSytle.fontSize = 15;
+
+	}
+	void SetTab(int count)
+	{
+		GUILayout.Label(TabStr, NormalSytle, GUILayout.Width(TabSize * count));
+	}
+	//绘制窗口时调用
+	void OnGUI()
+	{
+		//***************************************************************************
+		GUILayout.BeginArea(new Rect(0,0,position.width, LayoutOneHeight));
+		GUILayout.Label("编辑器模式运行的过程中:", titleSytle);
+		//是否使用bundle
+		{
+			GUILayout.BeginHorizontal();
+			{
+				SetTab(2);
+				GUILayout.Label("编辑器模式下是否使用AssetBundle:", NormalSytle, GUILayout.Width(260));
+				if(AssetBundleHelper.UseAssetBundle)
+				{
+					//GUI.enabled = false;
+					GUILayout.Label("使用AB", RedTextFieldSytle, GUILayout.Width(100));
+					//GUI.enabled = true;
+				}
+				else
+				{
+					GUI.enabled = false;
+					GUILayout.Label("不使用AB", RedTextFieldSytle, GUILayout.Width(100));
+					GUI.enabled = true;
+				}
+				if (GUILayout.Button("更改", ResetButtonSytle, GUILayout.Width(100)))
+				{
+					AssetBundleHelper.UseAssetBundle = !AssetBundleHelper.UseAssetBundle;
+				}
+				//AssetBundleHelper.UseAssetBundle = GUILayout.Toggle(AssetBundleHelper.UseAssetBundle, "", ToggleSytle, GUILayout.ExpandWidth(false));
+			}
+			GUILayout.EndHorizontal();
+		}
+		GUILayout.EndArea();
+		//**************************************************************************
+		GUILayout.BeginArea(new Rect(0, LayoutOneHeight, position.width, position.height));
+		GUILayout.Label("Build AssetBundle的时候:", titleSytle);
+		//输出目录
+		{
+			GUILayout.BeginHorizontal();
+			{
+				SetTab(1);
+				GUILayout.Label("AssetBundle输出的目录（相对与Assets目录上一层的相对目录,修改前请思考一下）:", NormalSytle);
+			}
+			GUILayout.EndHorizontal();
+			GUILayout.BeginHorizontal();
+			{
+				SetTab(2);
+				BuildBundleManager.AssetBundlePath = (GUILayout.TextField(BuildBundleManager.AssetBundlePath, TextFieldSytle, GUILayout.Width(700)));
+				//防止不小心修改，可以重置为默认值
+				if (GUILayout.Button("重置为默认", ResetButtonSytle, GUILayout.Width(100)))
+				{
+					BuildBundleManager.AssetBundlePath = BuildBundleManager.assetBundlePath;
+				}
+			}
+			GUILayout.EndHorizontal();
+		}
+		//打包目录
+		{
+			GUILayout.BeginHorizontal();
+			{
+				SetTab(1);
+				GUILayout.Label("需要build assetbundle的目录（相对与Assets目录上一层的相对目录,修改前请思考一下）:", NormalSytle);
+			}
+			GUILayout.EndHorizontal();
+			GUILayout.BeginHorizontal();
+			{
+				SetTab(2);
+				BuildBundleManager.NeedBuildAssetBundlePath = (GUILayout.TextField(BuildBundleManager.NeedBuildAssetBundlePath, TextFieldSytle, GUILayout.Width(700)));
+				//防止不小心修改，可以重置为默认值
+				if (GUILayout.Button("重置为默认", ResetButtonSytle, GUILayout.Width(100)))
+				{
+					BuildBundleManager.NeedBuildAssetBundlePath = BuildBundleManager.needBuildAssetBundlePath;
+				}
+			}
+			GUILayout.EndHorizontal();
+		}
+		//xml信息
+		{
+			//AB信息
+			{
+				GUILayout.BeginHorizontal();
+				{
+					SetTab(1);
+					GUILayout.Label("ABInfo 的xml文件路径（相对与Assets目录上一层的相对目录,这个并不准备让你修改，但是让你看一下在哪）:", NormalSytle);
+				}
+				GUILayout.EndHorizontal();
+				//ios系列
+				GUILayout.BeginHorizontal();
+				{
+					SetTab(2);
+					GUILayout.Label("iOS系列：", NormalSytle);
+				}
+				GUILayout.EndHorizontal();
+				GUILayout.BeginHorizontal();
+				{
+					SetTab(2);
+					GUI.enabled = false;
+					GUILayout.Label(BuildBundleManager.GetABInfoXmlPath(AssetBundleHelper.RuntimePlatformToSimplifyName(RuntimePlatform.OSXEditor)), TextFieldSytle, GUILayout.Width(700));
+					GUI.enabled = true;
+				}
+				GUILayout.EndHorizontal();
+				//android系列
+				GUILayout.BeginHorizontal();
+				{
+					SetTab(2);
+					GUILayout.Label("android系列：", NormalSytle);
+				}
+				GUILayout.EndHorizontal();
+				GUILayout.BeginHorizontal();
+				{
+					SetTab(2);
+					GUI.enabled = false;
+					GUILayout.Label(BuildBundleManager.GetABInfoXmlPath(AssetBundleHelper.RuntimePlatformToSimplifyName(RuntimePlatform.Android)), TextFieldSytle, GUILayout.Width(700));
+					GUI.enabled = true;
+				}
+				GUILayout.EndHorizontal();
+				//Windows系列
+				GUILayout.BeginHorizontal();
+				{
+					SetTab(2);
+					GUILayout.Label("Windows系列：", NormalSytle);
+				}
+				GUILayout.EndHorizontal();
+				GUILayout.BeginHorizontal();
+				{
+					SetTab(2);
+					GUI.enabled = false;
+					GUILayout.Label(BuildBundleManager.GetABInfoXmlPath(AssetBundleHelper.RuntimePlatformToSimplifyName(RuntimePlatform.WindowsEditor)), TextFieldSytle, GUILayout.Width(700));
+					GUI.enabled = true;
+				}
+				GUILayout.EndHorizontal();
+			}
+			//ABDiffer信息
+			{
+				GUILayout.BeginHorizontal();
+				{
+					SetTab(1);
+					GUILayout.Label("ABInfo 的xml文件路径（相对与Assets目录上一层的相对目录,这个并不准备让你修改，但是让你看一下在哪）:", NormalSytle);
+				}
+				GUILayout.EndHorizontal();
+				//ios系列
+				GUILayout.BeginHorizontal();
+				{
+					SetTab(2);
+					GUILayout.Label("iOS系列：", NormalSytle);
+				}
+				GUILayout.EndHorizontal();
+				GUILayout.BeginHorizontal();
+				{
+					SetTab(2);
+					GUI.enabled = false;
+					GUILayout.Label(BuildBundleManager.GetDifferXmlPath(AssetBundleHelper.RuntimePlatformToSimplifyName(RuntimePlatform.OSXEditor)), TextFieldSytle, GUILayout.Width(700));
+					GUI.enabled = true;
+				}
+				GUILayout.EndHorizontal();
+				//android系列
+				GUILayout.BeginHorizontal();
+				{
+					SetTab(2);
+					GUILayout.Label("android系列：", NormalSytle);
+				}
+				GUILayout.EndHorizontal();
+				GUILayout.BeginHorizontal();
+				{
+					SetTab(2);
+					GUI.enabled = false;
+					GUILayout.Label(BuildBundleManager.GetDifferXmlPath(AssetBundleHelper.RuntimePlatformToSimplifyName(RuntimePlatform.Android)), TextFieldSytle, GUILayout.Width(700));
+					GUI.enabled = true;
+				}
+				GUILayout.EndHorizontal();
+				//Windows系列
+				GUILayout.BeginHorizontal();
+				{
+					SetTab(2);
+					GUILayout.Label("Windows系列：", NormalSytle);
+				}
+				GUILayout.EndHorizontal();
+				GUILayout.BeginHorizontal();
+				{
+					SetTab(2);
+					GUI.enabled = false;
+					GUILayout.Label(BuildBundleManager.GetDifferXmlPath(AssetBundleHelper.RuntimePlatformToSimplifyName(RuntimePlatform.WindowsEditor)), TextFieldSytle, GUILayout.Width(700));
+					GUI.enabled = true;
+				}
+				GUILayout.EndHorizontal();
+			}
+		}
+		GUILayout.EndArea();
+		//*****************************************************************************
 	}
 }
 #endif
