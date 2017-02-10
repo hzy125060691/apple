@@ -11,12 +11,14 @@ using UnityEditor;
 /// </summary>
 public class AssetBundleHelper : MonoBehaviour
 {
-	public const string AssetBundelExtName = @".assetbundle";           //assetbundle的扩展名
+	public const string AssetBundelExtName = @".assetbundle";							//assetbundle的扩展名
 	public const string WindowsSimplifyName = @"Microsoft";
 	public const string AndroidSimplifyName = @"Google";
 	public const string OSXSimplifyName = @"Apple";
 
-	private static Queue<KeyValuePair<string, Action<UnityEngine.Object>>> NeedLoadQueue = new Queue<KeyValuePair<string, Action<UnityEngine.Object>>>();
+	public const string AssetBundlePrefixPath = @"Assets/Resources";					//bundle路径的前缀
+
+	private static Queue<KeyValuePair<string, KeyValuePair<bool,Action<UnityEngine.Object>>>> NeedLoadQueue = new Queue<KeyValuePair<string, KeyValuePair<bool, Action<UnityEngine.Object>>>>();
 
 	private static AssetBundleManifest manifest = null;
 	//private static object manifest_Sum_LockObj = new object();
@@ -31,18 +33,20 @@ public class AssetBundleHelper : MonoBehaviour
 		DontDestroyOnLoad(this);
 		Ins = this;
 	}
-// 	void Start()
-// 	{
-// 	}
-	public void PushResToNeedLoad(string path, Action<UnityEngine.Object> callback)
+	// 	void Start()
+	// 	{
+	// 	}
+	public void PushResToNeedLoad(string path, Action<UnityEngine.Object> callback, bool bInstantiate = true)
 	{
-		NeedLoadQueue.Enqueue(new KeyValuePair<string, Action<UnityEngine.Object>>(path, callback));
+		path = Path.Combine(AssetBundlePrefixPath, path).ToLower();
+		//Debug.Log(path);
+		NeedLoadQueue.Enqueue(new KeyValuePair<string, KeyValuePair<bool, Action<UnityEngine.Object>>>(path, new KeyValuePair<bool, Action<UnityEngine.Object>>(bInstantiate,callback)));
 		if (LoadResCor == null)
 		{
 			LoadResCor = StartCoroutine(LoadResourceAsyn());
 		}
 	}
-	void Destory()
+	void OnDestroy()
 	{
 		AssetBundleDic.Clear();
 	}
@@ -200,7 +204,8 @@ public class AssetBundleHelper : MonoBehaviour
 		{
 			var needLoad = NeedLoadQueue.Dequeue();
 			string loadResourceName = needLoad.Key;
-			var callback = needLoad.Value;
+			var bInstantiate = needLoad.Value.Key;
+			var callback = needLoad.Value.Value;
 			UnityEngine.Object newObj = null;
 			if (UseAssetBundle)
 			{
@@ -304,7 +309,14 @@ public class AssetBundleHelper : MonoBehaviour
 					var obj = AssetBundleDic.GetAssetBundle(name).LoadAsset(loadResourceName);
 					if (obj != null)
 					{
-						newObj = Instantiate(obj) as UnityEngine.Object;
+						if(bInstantiate)
+						{
+							newObj = Instantiate(obj) as UnityEngine.Object;
+						}
+						else
+						{
+							newObj = obj;
+						}
 					}
 					else
 					{
@@ -376,9 +388,9 @@ public class AssetBundleRecord
 
 	public bool ContainsKey(string key)
 	{
-		assetBundleUseTime.Add(new KeyValuePair<string, string>(key, DateTime.Now.ToString() + ":ContainsKey"));
+		assetBundleUseTime.Add(new KeyValuePair<string, string>(key.ToLower(), DateTime.Now.ToString() + ":ContainsKey"));
 		PrintLog();
-		return assetBundleDic.ContainsKey(key);
+		return assetBundleDic.ContainsKey(key.ToLower());
 	}
 
 	public AssetBundle GetAssetBundle(string key)
@@ -387,14 +399,14 @@ public class AssetBundleRecord
 // 		{
 // 			return null;
 // 		}
-		assetBundleUseTime.Add(new KeyValuePair<string, string>(key, DateTime.Now.ToString() + ":Get"));
+		assetBundleUseTime.Add(new KeyValuePair<string, string>(key.ToLower(), DateTime.Now.ToString() + ":Get"));
 		PrintLog();
-		return assetBundleDic[key];
+		return assetBundleDic[key.ToLower()];
 	}
 	public void Add(string key, AssetBundle bundle)
 	{
-		assetBundleDic.Add(key, bundle);
-		assetBundleUseTime.Add(new KeyValuePair<string, string>(key, DateTime.Now.ToString() + ":Add"));
+		assetBundleDic.Add(key.ToLower(), bundle);
+		assetBundleUseTime.Add(new KeyValuePair<string, string>(key.ToLower(), DateTime.Now.ToString() + ":Add"));
 		PrintLog();
 	}
 	private void PrintLog()

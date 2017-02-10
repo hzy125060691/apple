@@ -11,7 +11,13 @@ using System.Linq;
 /// </summary>
 public class BuildBundleManager
 {
-	public const string needBuildAssetBundlePath = @"Assets/Resources";				//将要打包的目录，这个可以随意更改
+	public static string needBuildAssetBundlePath                                   //将要打包的目录，这个可以随意更改
+	{
+		get
+		{
+			return AssetBundleHelper.AssetBundlePrefixPath;
+		}
+	}
 	public const string assetBundlePath = @"AssetBundles";                          //打包输出目录，这个目录目前看来并不需要修改
 
 	#region 默认的某些属性
@@ -21,7 +27,7 @@ public class BuildBundleManager
 		get
 		{
 			var tar = EditorPrefs.GetString(AssetBundlePathKey);
-			if(tar == null || tar.Equals(""))
+			if (tar == null || tar.Equals(""))
 			{
 				return assetBundlePath;
 			}
@@ -52,20 +58,240 @@ public class BuildBundleManager
 	#endregion
 
 	#region 这一部分是生成的XML相关的，可以改也可以不改，人能看懂就行
-	public const string ABVersionInfoName = @"ABVersionInfo.xml";							//输出所有ab信息的文件名
-	public const string ABDifferInfoName = @"ABDifferInfo.xml";								//对比两次打包不同AB信息的文件名
-	private const string xmlNode_AssetBundlesName = @"AssetBundles";						//输出信息中XML node的名字
-	private const string xmlNode_NewAssetBundlesName = @"NewAssetBundles";					//输出信息中XML node的名字
-	private const string xmlNode_DelAssetBundlesName = @"DelAssetBundles";					//输出信息中XML node的名字
-	private const string xmlNode_ChangedAssetBundlesName = @"ChangedAssetBundles";			//输出信息中XML node的名字
-	private const string xmlAttribute_CreateTime = @"Time";									//输出信息中XML Attribute的名字
-	private const string xmlNode_ABName = @"AssetBundle";									//输出信息中XML node的名字
-	private const string xmlNode_NameName = @"name";										//输出信息中XML node的名字
-	private const string xmlNode_HashName = @"hash";										//输出信息中XML node的名字
-	private const string xmlNode_OldHashName = @"OldHash";									//输出信息中XML node的名字
-	private const string xmlNode_NewHasHName = @"NewHash";									//输出信息中XML node的名字
+	public const string ABVersionInfoName = @"ABVersionInfo.xml";                           //输出所有ab信息的文件名
+	public const string ABDifferInfoName = @"ABDifferInfo.xml";                             //对比两次打包不同AB信息的文件名
+	public const string ABDependenciesInfoName = @"ABDependenciesInfo.xml";                 //输出所有打包资源依赖项信息文件
+	private const string xmlNode_AssetBundlesName = @"AssetBundles";                        //输出信息中XML node的名字
+	private const string xmlNode_NewAssetBundlesName = @"NewAssetBundles";                  //输出信息中XML node的名字
+	private const string xmlNode_DelAssetBundlesName = @"DelAssetBundles";                  //输出信息中XML node的名字
+	private const string xmlNode_ChangedAssetBundlesName = @"ChangedAssetBundles";          //输出信息中XML node的名字
+	private const string xmlAttribute_CreateTime = @"Time";                                 //输出信息中XML Attribute的名字
+	private const string xmlNode_ABName = @"AssetBundle";                                   //输出信息中XML node的名字
+	private const string xmlNode_NameName = @"name";                                        //输出信息中XML node的名字
+	private const string xmlNode_HashName = @"hash";                                        //输出信息中XML node的名字
+	private const string xmlNode_OldHashName = @"OldHash";                                  //输出信息中XML node的名字
+	private const string xmlNode_NewHasHName = @"NewHash";                                  //输出信息中XML node的名字
+	private const string xmlNode_ABDependenciesName = @"Dependencies";                      //输出信息中XML node的名字
+	private const string xmlNode_ABDependencies_P_Name = @"Dependencies_P";                 //输出信息中XML node的名字
+	private const string xmlNode_ABDependency_P_Name = @"Dependency_P";                     //输出信息中XML node的名字
+	private const string xmlNode_ABDependencyName = @"Dependency";                          //输出信息中XML node的名字
+	private const string xmlNode_ABDependencies_R_Name = @"Dependencies_R";                 //输出信息中XML node的名字
+	private const string xmlNode_ABDependency_R_Name = @"Dependency_R";                     //输出信息中XML node的名字
+	private const string xmlNode_ABDependency_Count_Name = @"Count";                        //输出信息中XML node的名字
+	private const string xmlNode_ABSizeName = @"Size";                                      //输出信息中XML node的名字
+	private const string xmlNode_ABSizeXBName = @"SizeXB";                                  //输出信息中XML node的名字
+
 	#endregion
 
+	#region 依赖信息统计
+	private static MyDic ABDependenciesReverse = new MyDic();
+	private static MyDic ABDependenciesPositive = new MyDic();
+	class MyDic
+	{
+		private static Dictionary<string, DependenciesRefAndCount> allDic = new Dictionary<string, DependenciesRefAndCount>();
+		public static void ClearAllDic()
+		{
+			allDic.Clear();
+		}
+		public DependenciesRefAndCount GetDRAC(string key, bool dontAdd = false)
+		{
+			key = AssetBundleHelper.PathToPlatformFormat(key).ToLower();
+			if (!allDic.ContainsKey(key))
+			{
+				if (dontAdd)
+				{
+					return null;
+				}
+				var d = DependenciesRefAndCount.GetNew(key);
+				allDic.Add(key, d);
+			}
+			return allDic[key];
+			
+		}
+		private Dictionary<string, DependenciesRefAndCount> dic = new Dictionary<string, DependenciesRefAndCount>();
+		public void Add(string key, DependenciesRefAndCount value)
+		{
+			key = AssetBundleHelper.PathToPlatformFormat(key).ToLower();
+			dic.Add(key.ToLower(), value);
+		}
+		public bool ContainsKey(string key)
+		{
+			key = AssetBundleHelper.PathToPlatformFormat(key).ToLower();
+			return dic.ContainsKey(key);
+		}
+		public DependenciesRefAndCount this[string key]
+		{
+			get
+			{
+				key = AssetBundleHelper.PathToPlatformFormat(key).ToLower();
+				return dic[key];
+			}
+			set
+			{
+				key = AssetBundleHelper.PathToPlatformFormat(key).ToLower();
+				dic[key] = value;
+			}
+		}
+		public Dictionary<string, DependenciesRefAndCount> GetDic()
+		{
+			return dic;
+		}
+		public void Clear()
+		{
+			dic.Clear();
+		}
+	}
+	class DependenciesRefAndCount
+	{
+		private string key;
+		public string Key
+		{
+			get { return key; }
+		}
+		private int count;
+		public int Count
+		{
+			get { return count; }
+		}
+		private List<string> refs;
+		public List<string> Refs
+		{
+			get { return refs; }
+		}
+		private long finalSize;
+		public long FinalSize
+		{
+			get
+			{
+				return finalSize;
+			}
+			set
+			{
+				finalSize = value;
+			}
+		}
+		public static DependenciesRefAndCount  GetNew(string sKey)
+		{
+			sKey = AssetBundleHelper.PathToPlatformFormat(sKey).ToLower();
+			return new DependenciesRefAndCount(sKey);
+		}
+		DependenciesRefAndCount(string sKey)
+		{
+			sKey = AssetBundleHelper.PathToPlatformFormat(sKey).ToLower();
+			key = sKey;
+			count = 0;
+			finalSize = 0;
+			refs = new List<string>();
+		}
+		public void AddRef(string sRef)
+		{
+			sRef = AssetBundleHelper.PathToPlatformFormat(sRef).ToLower();
+			count++;
+			refs.Add(sRef);
+		}
+	}
+
+	#endregion
+	/// <summary>
+	/// 生成资源依赖信息
+	/// </summary>
+	/// <param name="versionName">一般是平台名字，也可以加其他文件夹在</param>
+	private static void GenABDependenciesInfo(string versionName)
+	{
+		string filepath = (GetABDependenciesXmlPath(versionName));
+		XmlDocument xmlDoc = null;
+		//创建XML文档实例  
+		xmlDoc = new XmlDocument();
+		XmlElement AllRoot = xmlDoc.CreateElement(xmlNode_ABDependenciesName);
+		//创建个时间属性，可以更直观的对比不同版本的
+		AllRoot.SetAttribute(xmlAttribute_CreateTime, DateTimeString);
+		xmlDoc.AppendChild(AllRoot);
+		//正向依赖
+		XmlElement ABDs_P = xmlDoc.CreateElement(xmlNode_ABDependencies_P_Name);
+		foreach (var abd in ABDependenciesPositive.GetDic())
+		{
+			XmlElement ABD_P = xmlDoc.CreateElement(xmlNode_ABDependency_P_Name);
+			ABD_P.SetAttribute(xmlNode_ABName, abd.Key);
+			ABD_P.SetAttribute(xmlNode_ABDependency_Count_Name, abd.Value.Count.ToString());
+			if (abd.Value.FinalSize > 0 && abd.Value.FinalSize < 1024)
+			{
+				ABD_P.SetAttribute(xmlNode_ABSizeXBName, ((float)abd.Value.FinalSize).ToString() + " B");
+			}
+			else if (abd.Value.FinalSize >= 1024 && abd.Value.FinalSize < 1024 * 1024)
+			{
+				ABD_P.SetAttribute(xmlNode_ABSizeXBName, ((float)abd.Value.FinalSize / 1024).ToString("f3") + " KB");
+			}
+			else if (abd.Value.FinalSize >= 1024 * 1024)
+			{
+				ABD_P.SetAttribute(xmlNode_ABSizeXBName, ((float)abd.Value.FinalSize / (1024 * 1024)).ToString("f3") + " MB");
+			}
+			foreach (var d in abd.Value.Refs)
+			{
+				XmlElement d_P = xmlDoc.CreateElement(xmlNode_ABDependencyName);
+				d_P.SetAttribute(xmlNode_NameName, d);
+				var size = ABDependenciesPositive.GetDRAC(d, true).FinalSize;
+				if (size > 0  && size < 1024)
+				{
+					d_P.SetAttribute(xmlNode_ABSizeXBName, ((float)size).ToString() + " B");
+				}
+				else if (size >= 1024 && size < 1024 * 1024)
+				{
+					d_P.SetAttribute(xmlNode_ABSizeXBName, ((float)size / 1024).ToString("f3") + " KB");
+				}
+				else if (size >= 1024 * 1024)
+				{
+					d_P.SetAttribute(xmlNode_ABSizeXBName, ((float)size / (1024 * 1024)).ToString("f3") + " MB");
+				}
+				ABD_P.AppendChild(d_P);
+			}
+			ABDs_P.AppendChild(ABD_P);
+		}
+		AllRoot.AppendChild(ABDs_P);
+		//反向依赖
+		XmlElement ABDs_R = xmlDoc.CreateElement(xmlNode_ABDependencies_R_Name);
+		foreach (var abd in ABDependenciesReverse.GetDic())
+		{
+			XmlElement ABD_R = xmlDoc.CreateElement(xmlNode_ABDependency_R_Name);
+			ABD_R.SetAttribute(xmlNode_ABName, abd.Key);
+			ABD_R.SetAttribute(xmlNode_ABDependency_Count_Name, abd.Value.Count.ToString());
+			if (abd.Value.FinalSize > 0 && abd.Value.FinalSize < 1024)
+			{
+				ABD_R.SetAttribute(xmlNode_ABSizeXBName, ((float)abd.Value.FinalSize).ToString() + " B");
+			}
+			else if (abd.Value.FinalSize >= 1024 && abd.Value.FinalSize < 1024 * 1024)
+			{
+				ABD_R.SetAttribute(xmlNode_ABSizeXBName, ((float)abd.Value.FinalSize / 1024).ToString("f3") + " KB");
+			}
+			else if (abd.Value.FinalSize >= 1024 * 1024)
+			{
+				ABD_R.SetAttribute(xmlNode_ABSizeXBName, ((float)abd.Value.FinalSize / (1024 * 1024)).ToString("f3") + " MB");
+			}
+			foreach (var d in abd.Value.Refs)
+			{
+				XmlElement d_R = xmlDoc.CreateElement(xmlNode_ABDependencyName);
+				d_R.SetAttribute(xmlNode_NameName, d);
+				var size = ABDependenciesPositive.GetDRAC(d, true).FinalSize;
+				if (size > 0 && size < 1024)
+				{
+					d_R.SetAttribute(xmlNode_ABSizeXBName, ((float)size).ToString() + " B");
+				}
+				else if (size >= 1024 && size < 1024 * 1024)
+				{
+					d_R.SetAttribute(xmlNode_ABSizeXBName, ((float)size / 1024).ToString("f3") + " KB");
+				}
+				else if (size >= 1024 * 1024)
+				{
+					d_R.SetAttribute(xmlNode_ABSizeXBName, ((float)size / (1024 * 1024)).ToString("f3") + " MB");
+				}
+				ABD_R.AppendChild(d_R);
+			}
+			ABDs_R.AppendChild(ABD_R);
+		}
+		AllRoot.AppendChild(ABDs_R);
+
+		//同名文件直接覆盖
+		xmlDoc.Save(filepath);
+	}
 	public const string DateFormat = @"yyyy-MM-dd HH:mm:ss.fff";
 	public static string DateTimeString = @"";
 
@@ -76,6 +302,8 @@ public class BuildBundleManager
 	/// <param name="versionName">一般是平台名字，也可以加其他文件夹在</param>
 	private static void GenABVersionInfo(AssetBundleManifest mf, string versionName)
 	{
+		//string ABPath = AssetBundleHelper.Combine(Application.dataPath.Substring(0, Application.dataPath.LastIndexOf("Assets")), GetAssetBundlePath(versionName));
+		string ABPath = GetAssetBundlePath(versionName);
 		string filepath = (GetABInfoXmlPath(versionName));
 		XmlDocument xmlDoc = null;
 		//创建XML文档实例  
@@ -86,14 +314,43 @@ public class BuildBundleManager
 		xmlDoc.AppendChild(AllRoot);
 
 		//输出结果按名字排序，以后要对比两个文件也方面一些
-		var abNames = mf.GetAllAssetBundles().OrderBy(n=>n);
+		var abNames = mf.GetAllAssetBundles().OrderBy(n => n).Select(key=>AssetBundleHelper.PathToPlatformFormat(key).ToLower()) ;
+		List<KeyValuePair<long, XmlElement>> allE = new List<KeyValuePair<long, XmlElement>>();
 		foreach (var abName in abNames)
 		{
+			//bundle大小也输出一下
+			FileInfo fi = new FileInfo(AssetBundleHelper.Combine(ABPath, abName));
+			{
+				//把bundle大小也写到AB依赖中
+				string name = abName.Substring(0, abName.IndexOf(AssetBundleHelper.AssetBundelExtName));
+				var drac = ABDependenciesPositive.GetDRAC(name, true);
+				if (drac != null)
+				{
+					drac.FinalSize = fi.Length;
+				}
+			}
 			var hash = mf.GetAssetBundleHash(abName);
 			XmlElement node = xmlDoc.CreateElement(xmlNode_ABName);
 			node.SetAttribute(xmlNode_NameName, abName);
 			node.SetAttribute(xmlNode_HashName, hash.ToString());
-			AllRoot.AppendChild(node);
+			node.SetAttribute(xmlNode_ABSizeName, fi.Length.ToString());
+			if(fi.Length < 1024)
+			{
+				node.SetAttribute(xmlNode_ABSizeXBName, ((float)fi.Length ).ToString()+" B");
+			}
+			else if(fi.Length >= 1024 && fi.Length < 1024 * 1024)
+			{
+				node.SetAttribute(xmlNode_ABSizeXBName, ((float)fi.Length / 1024).ToString("f3")+" KB");
+			}
+			else
+			{
+				node.SetAttribute(xmlNode_ABSizeXBName, ((float)fi.Length / (1024 * 1024)).ToString("f3") + " MB");
+			}
+			allE.Add(new KeyValuePair<long, XmlElement>(fi.Length, node));
+		}
+		foreach (var node in allE.OrderByDescending(k => k.Key).ThenBy(k => k.Value.GetAttribute(xmlNode_NameName)))
+		{
+			AllRoot.AppendChild(node.Value);
 		}
 		//同名文件直接覆盖
 		xmlDoc.Save(filepath);
@@ -108,7 +365,7 @@ public class BuildBundleManager
 		var list = new Dictionary<string, string>();
 		string filepath = (GetABInfoXmlPath(versionName));
 		XmlDocument xmlDoc = new XmlDocument();
-		if(File.Exists(filepath))
+		if (File.Exists(filepath))
 		{
 			xmlDoc.Load(filepath);
 			XmlNodeList nodeList = xmlDoc.SelectSingleNode(xmlNode_AssetBundlesName).ChildNodes;
@@ -134,7 +391,7 @@ public class BuildBundleManager
 		delAB = new Dictionary<string, string>();
 		//临时记录改变的AssetBundle
 		changedAB = new Dictionary<string, KeyValuePair<string, string>>();
-		var abNames = newMf.GetAllAssetBundles();
+		var abNames = newMf.GetAllAssetBundles().Select(key => AssetBundleHelper.PathToPlatformFormat(key).ToLower());
 		foreach (var name in abNames)
 		{
 			var newHash = newMf.GetAssetBundleHash(name).ToString();
@@ -224,13 +481,22 @@ public class BuildBundleManager
 	{
 		return AssetBundleHelper.Combine(AssetBundlePath, versionName, ABVersionInfoName);
 	}
-	
+	/// <summary>
+	/// 根据versionName获得输出AB依赖信息文件的路径
+	/// </summary>
+	/// <param name="versionName">一般是平台名字，也可以加其他文件夹在</param>
+	/// <returns>输出路径</returns>
+	public static string GetABDependenciesXmlPath(string versionName)
+	{
+		return AssetBundleHelper.Combine(AssetBundlePath, versionName, ABDependenciesInfoName);
+	}
+
 	/// <summary>
 	/// 获得路径下所有非meta文件，递归搜索文件夹
 	/// </summary>
 	/// <param name="path">搜索的目标文件夹</param>
 	/// <returns>返回一个序列，包含每一个文件的信息和相对于assets文件夹的路径</returns>
-	private static List<KeyValuePair<string,FileInfo>> GetAllFilesWithoutMeta(string path)
+	private static List<KeyValuePair<string, FileInfo>> GetAllFilesWithoutMeta(string path)
 	{
 		var list = new List<KeyValuePair<string, FileInfo>>();
 		if (Directory.Exists(path))
@@ -240,7 +506,7 @@ public class BuildBundleManager
 
 			list.AddRange(files.Where(f => !f.Name.Contains(".meta")).Select(
 				//这里文件名进行了转换，windows下都变成\\，OSX下都是/
-				f=> new KeyValuePair<string, FileInfo>(f.FullName.Substring(f.FullName.IndexOf(AssetBundleHelper.PathToPlatformFormat(NeedBuildAssetBundlePath))), f)
+				f => new KeyValuePair<string, FileInfo>(f.FullName.Substring(f.FullName.IndexOf(AssetBundleHelper.PathToPlatformFormat(NeedBuildAssetBundlePath))).ToLower(), f)
 				));
 			var dirs = fileDir.GetDirectories();
 			foreach (var dir in dirs)
@@ -260,7 +526,7 @@ public class BuildBundleManager
 	private static AssetBundleBuild[] GetBuildMapByVersion(string versionName)
 	{
 		List<AssetBundleBuild> list = new List<AssetBundleBuild>();
-		
+
 		if (!Directory.Exists(NeedBuildAssetBundlePath))
 		{
 			return null;
@@ -268,13 +534,31 @@ public class BuildBundleManager
 		var NeedBuildABFileList = GetAllFilesWithoutMeta(NeedBuildAssetBundlePath);
 		var dicDependencies = new Dictionary<string, string>();
 		//遍历这些文件去找到所有的依赖项
-		foreach(var file in NeedBuildABFileList)
+		foreach (var file in NeedBuildABFileList)
 		{
+			//添加正向依赖，这个不可能会重复，所以不用判断ContainsKey
+			ABDependenciesPositive.Add(file.Key, ABDependenciesPositive.GetDRAC(file.Key));
 			//var relativePath = Path.Combine();
 			var dps = AssetDatabase.GetDependencies(file.Key);
-			foreach(var dp in dps.Where(d=>!d.EndsWith(".cs")))//脚本文件排除
+			//                                                                         这里文件名进行了转换，windows下都变成\\，OSX下都是/
+			//也转换了一下小写
+			foreach (var dp in dps.Where(d => !d.EndsWith(".cs")).Select(d=> AssetBundleHelper.PathToPlatformFormat(d.ToLower())))//脚本文件排除
 			{
-				if(dicDependencies.ContainsKey(dp))
+				{
+					//增加反向依赖，这个会统计数量
+					if (!file.Key.Equals(dp))
+					{
+						if (!ABDependenciesReverse.ContainsKey(dp))
+						{
+							ABDependenciesReverse.Add(dp, ABDependenciesReverse.GetDRAC(dp));
+						}
+						ABDependenciesReverse[dp].AddRef(file.Key);
+
+						//正向依赖
+						ABDependenciesPositive[file.Key].AddRef(dp);
+					}
+				}
+				if (dicDependencies.ContainsKey(dp))
 				{
 					continue;
 				}
@@ -282,6 +566,14 @@ public class BuildBundleManager
 				{
 					dicDependencies.Add(dp, dp);
 				}
+			}
+		}
+		//这里根据依赖关系，把只被一个单独AB依赖的资源不设置单独打包
+		foreach (var abd in ABDependenciesReverse.GetDic().Where(dr=>dr.Value.Count==1))
+		{
+			if(dicDependencies.ContainsKey(abd.Key))
+			{
+				dicDependencies.Remove(abd.Key);
 			}
 		}
 		//这里已经获得了所有的资源名称，可以直接生成AssetBundleBuild了
@@ -316,12 +608,12 @@ public class BuildBundleManager
 			string pathPrefix = (GetAssetBundlePath(versionName));
 			//路径里可千万别有相同的目录结构啊……比如 Assets/AssetBundles/Windows64/XXXXXX/Assets/AssetBundles/Windows64/
 			int index = file.FullName.LastIndexOf(pathPrefix) + pathPrefix.Length + 1;
-			if(index >= 0)
+			if (index >= 0)
 			{
-				if(index < file.FullName.Length)
+				if (index < file.FullName.Length)
 				{
 					var relativePath = AssetBundleHelper.PathToPlatformFormat(file.FullName.Substring(index));
-					Debug.Log(relativePath);
+					//Debug.Log(relativePath);
 					if (fileNames.ContainsKey(relativePath.ToLower()))
 					{
 						DeleteFileAndManifest(file.FullName);
@@ -329,7 +621,7 @@ public class BuildBundleManager
 				}
 				else
 				{
-					Debug.LogError("DeleteAssetBundleFiles Error:" + file.FullName+ " :pathPrefix:" + pathPrefix);
+					Debug.LogError("DeleteAssetBundleFiles Error:" + file.FullName + " :pathPrefix:" + pathPrefix);
 				}
 			}
 		}
@@ -348,14 +640,14 @@ public class BuildBundleManager
 	{
 		DirectoryInfo fileDir = new DirectoryInfo(path);
 		var dirs = fileDir.GetDirectories();
-		foreach(var dir in dirs)
+		foreach (var dir in dirs)
 		{
 			DeleteEmptyFolders(dir.FullName);
 		}
 
 		var files = fileDir.GetFiles();
 		var afterPostDirs = fileDir.GetDirectories();
-		if(files.Length == 0 && afterPostDirs.Length == 0)
+		if (files.Length == 0 && afterPostDirs.Length == 0)
 		{
 			DeleteFolder(path);
 		}
@@ -385,7 +677,7 @@ public class BuildBundleManager
 	private static void DeleteFileAndManifest(string path)
 	{
 		DeleteFile(path);
-		DeleteFile(path+".manifest");
+		DeleteFile(path + ".manifest");
 	}
 	/// <summary>
 	/// 删除老旧的assetbundle文件，并清理空文件夹
@@ -416,13 +708,13 @@ public class BuildBundleManager
 	{
 		RuntimePlatform runtimePlatform = BuildTargetToRuntimePlatform(bt);
 		string versionName = AssetBundleHelper.RuntimePlatformToSimplifyName(runtimePlatform);
-		string streamingAssetsPath = AssetBundleHelper.GetStreamingAssetsPath();
+		//string streamingAssetsPath = AssetBundleHelper.GetStreamingAssetsPath();
 		//清理三个文件夹
 		string[] deletePaths = new string[3];
 		deletePaths[0] = AssetBundleHelper.Combine(AssetBundleHelper.GetStreamingAssetsPath(), AssetBundleHelper.RuntimePlatformToSimplifyName(RuntimePlatform.WindowsEditor));
 		deletePaths[1] = AssetBundleHelper.Combine(AssetBundleHelper.GetStreamingAssetsPath(), AssetBundleHelper.RuntimePlatformToSimplifyName(RuntimePlatform.OSXEditor));
 		deletePaths[2] = AssetBundleHelper.Combine(AssetBundleHelper.GetStreamingAssetsPath(), AssetBundleHelper.RuntimePlatformToSimplifyName(RuntimePlatform.Android));
-		foreach(var path in deletePaths)
+		foreach (var path in deletePaths)
 		{
 			if (Directory.Exists(path))
 			{
@@ -469,7 +761,7 @@ public class BuildBundleManager
 		//.meta文件会自动生成，不需要拷贝
 		//.manifest对于实际加载AB没有意义，不需要拷贝
 		//.xml目前是用来记录AB信息的，不需要运行时加载，不需要拷贝
-		foreach (string f in filesList.Where(f=>!f.EndsWith(".meta") && !f.EndsWith(".manifest") && !f.EndsWith(".xml")))
+		foreach (string f in filesList.Where(f => !f.EndsWith(".meta") && !f.EndsWith(".manifest") && !f.EndsWith(".xml")))
 		{
 			string fTarPath = AssetBundleHelper.Combine(tarPath, f.Substring(srcPath.Length + 1));
 			if (File.Exists(fTarPath))
@@ -521,6 +813,9 @@ public class BuildBundleManager
 	private static void BuildAssetBundle(BuildAssetBundleOptions options, BuildTarget bt, bool bIncrementalUpdate = true)
 	{
 		DateTimeString = DateTime.Now.ToString(DateFormat);
+		MyDic.ClearAllDic();
+		ABDependenciesPositive.Clear();
+		ABDependenciesReverse.Clear();
 		RuntimePlatform runtimePlatform = BuildTargetToRuntimePlatform(bt);
 		string versionName = AssetBundleHelper.RuntimePlatformToSimplifyName(runtimePlatform);
 		string path = GetAssetBundlePath(versionName);
@@ -544,7 +839,7 @@ public class BuildBundleManager
 		//在VersionInfo被覆盖前获得用来在下边做对比使用
 		var lastVersionInfo = GetABVersionInfo(versionName);
 		//获取所有需要打包的资源
-		var buildMap = GetBuildMapByVersion("");
+		var buildMap = GetBuildMapByVersion(versionName);
 		var manifest = BuildPipeline.BuildAssetBundles(GetAssetBundlePath(versionName), buildMap, options, bt);
 		//生成新的versioninfo
 		GenABVersionInfo(manifest, versionName);
@@ -554,16 +849,18 @@ public class BuildBundleManager
 			Dictionary<string, string> newAB;
 			Dictionary<string, string> delAB;
 			Dictionary<string, KeyValuePair<string, string>> changedAB;
-			CompareOldInfoAndNewManifest(lastVersionInfo, manifest, versionName,out newAB, out delAB, out changedAB);
-			if(delAB != null && delAB.Count > 0)
+			CompareOldInfoAndNewManifest(lastVersionInfo, manifest, versionName, out newAB, out delAB, out changedAB);
+			if (delAB != null && delAB.Count > 0)
 			{
 				DeleteAssetBundleFilesAndEmptyFolders(versionName, delAB);
 			}
 		}
+		//生成依赖信息
+		GenABDependenciesInfo(versionName);
 		//最后把一些空的文件夹和新版本不需要的assetbundle
 		AssetDatabase.Refresh();
 	}
-	
+
 
 	[MenuItem("AssetBundle/BuildAB_Win64")]
 	public static void BuildWin64()
@@ -614,10 +911,11 @@ public class MyEditor : EditorWindow
 	//输入文字的内容
 	private GUIStyle titleSytle = null;
 	private GUIStyle NormalSytle = null;
+	private GUIStyle RedNormalSytle = null;
 	private GUIStyle TextFieldSytle = null;
 	private GUIStyle RedTextFieldSytle = null;
 	private GUIStyle ResetButtonSytle = null;
-	private GUIStyle ToggleSytle = null;
+	//private GUIStyle ToggleSytle = null;
 
 	private const int TabSize = 70;
 	private const string TabStr = "	";
@@ -630,6 +928,10 @@ public class MyEditor : EditorWindow
 		NormalSytle = new GUIStyle(EditorStyles.boldLabel);
 		NormalSytle.fontSize = 15;
 
+		RedNormalSytle = new GUIStyle(EditorStyles.boldLabel);
+		RedNormalSytle.fontSize = 15;
+		RedNormalSytle.normal.textColor = Color.red;
+
 		TextFieldSytle = new GUIStyle(EditorStyles.textField);
 		TextFieldSytle.fontSize = 15;
 
@@ -640,7 +942,7 @@ public class MyEditor : EditorWindow
 		ResetButtonSytle = new GUIStyle(EditorStyles.miniButton);
 		ResetButtonSytle.fontSize = 15;
 
-		ToggleSytle = new GUIStyle(EditorStyles.toggle);
+		//ToggleSytle = new GUIStyle(EditorStyles.toggle);
 		//ToggleSytle.fontSize = 15;
 
 	}
@@ -652,7 +954,7 @@ public class MyEditor : EditorWindow
 	void OnGUI()
 	{
 		//***************************************************************************
-		GUILayout.BeginArea(new Rect(0,0,position.width, LayoutOneHeight));
+		GUILayout.BeginArea(new Rect(0, 0, position.width, LayoutOneHeight));
 		GUILayout.Label("编辑器模式运行的过程中:", titleSytle);
 		//是否使用bundle
 		{
@@ -660,7 +962,7 @@ public class MyEditor : EditorWindow
 			{
 				SetTab(2);
 				GUILayout.Label("编辑器模式下是否使用AssetBundle:", NormalSytle, GUILayout.Width(260));
-				if(AssetBundleHelper.UseAssetBundle)
+				if (AssetBundleHelper.UseAssetBundle)
 				{
 					//GUI.enabled = false;
 					GUILayout.Label("使用AB", RedTextFieldSytle, GUILayout.Width(100));
@@ -710,6 +1012,12 @@ public class MyEditor : EditorWindow
 			{
 				SetTab(1);
 				GUILayout.Label("需要build assetbundle的目录（相对与Assets目录上一层的相对目录,修改前请思考一下）:", NormalSytle);
+			}
+			GUILayout.EndHorizontal();
+			GUILayout.BeginHorizontal();
+			{
+				SetTab(1);
+				GUILayout.Label("如果真的要改这个，请记得把AssetBundleHelper.AssetBundlePrefixPath一同修改，这样游戏内才能正确找到bundle位置:", RedNormalSytle);
 			}
 			GUILayout.EndHorizontal();
 			GUILayout.BeginHorizontal();
