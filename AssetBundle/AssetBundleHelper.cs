@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System;
+using System.Threading;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -28,6 +29,7 @@ public class AssetBundleHelper : MonoBehaviour
 	//private static Dictionary<string, AssetBundle> AssetBundleDic = new Dictionary<string, AssetBundle>();
 	public static AssetBundleHelper Ins = null;
 	private Coroutine LoadResCor = null;
+	private Thread LoadThread = null;
 	void Awake()
 	{
 		DontDestroyOnLoad(this);
@@ -40,10 +42,30 @@ public class AssetBundleHelper : MonoBehaviour
 	{
 		path = Path.Combine(AssetBundlePrefixPath, path).ToLower();
 		//Debug.Log(path);
-		NeedLoadQueue.Enqueue(new KeyValuePair<string, KeyValuePair<bool, Action<UnityEngine.Object>>>(path, new KeyValuePair<bool, Action<UnityEngine.Object>>(bInstantiate,callback)));
+		lock(NeedLoadQueue)
+		{
+			NeedLoadQueue.Enqueue(new KeyValuePair<string, KeyValuePair<bool, Action<UnityEngine.Object>>>(path, new KeyValuePair<bool, Action<UnityEngine.Object>>(bInstantiate, callback)));
+		}
 		if (LoadResCor == null)
 		{
 			LoadResCor = StartCoroutine(LoadResourceAsyn());
+		}
+// 		if (LoadThread==null)
+// 		{
+// 			LoadThread = new Thread(new ThreadStart(ThreadLoadRes));
+// 			LoadThread.Start();
+// 		}
+	}
+	void ThreadLoadRes()
+	{
+		while(true)
+		{
+			Thread.Sleep(1);
+			var a = LoadResourceAsyn();
+			while (a.MoveNext())
+			{
+
+			}
 		}
 	}
 	void OnDestroy()
@@ -202,7 +224,11 @@ public class AssetBundleHelper : MonoBehaviour
 	{
 		while(NeedLoadQueue.Count > 0)
 		{
-			var needLoad = NeedLoadQueue.Dequeue();
+			KeyValuePair<string, KeyValuePair<bool, Action<UnityEngine.Object>>> needLoad;
+			lock (NeedLoadQueue)
+			{
+				needLoad = NeedLoadQueue.Dequeue();
+			}
 			string loadResourceName = needLoad.Key;
 			var bInstantiate = needLoad.Value.Key;
 			var callback = needLoad.Value.Value;
@@ -217,7 +243,7 @@ public class AssetBundleHelper : MonoBehaviour
 				{
 					if (manifest == null)
 					{
-						using (WWW www = new WWW(platformManifestPath))
+						using (WWW www = WWW.LoadFromCacheOrDownload(platformManifestPath,1))
 						{
 							yield return www;
 							if (www.error != null)
@@ -262,7 +288,7 @@ public class AssetBundleHelper : MonoBehaviour
 						{
 							if (!AssetBundleDic.ContainsKey(nameTmp))
 							{
-								using (WWW wwwTmp = new WWW(nameTmp))
+								using (WWW wwwTmp = WWW.LoadFromCacheOrDownload(nameTmp,1))
 								{
 									yield return wwwTmp;
 									if (wwwTmp.error != null)
@@ -280,7 +306,7 @@ public class AssetBundleHelper : MonoBehaviour
 					{
 						if (!AssetBundleDic.ContainsKey(name))
 						{
-							using (WWW wwwtar = new WWW(name))
+							using (WWW wwwtar = WWW.LoadFromCacheOrDownload(name, 1))
 							{
 								yield return wwwtar;
 								if (wwwtar.error != null)
