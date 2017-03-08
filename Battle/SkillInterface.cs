@@ -120,6 +120,8 @@ namespace ZzServer.Battle
 
 		int GetBuffStateIntParam(BuffInfo_New buffInfo, int key);
 		void SetBuffStateIntParam(BuffInfo_New buffInfo, int key, int i);
+		double GetBuffStateDoubleParam(BuffInfo_New buffInfo, int key);
+		void SetBuffStateDoubleParam(BuffInfo_New buffInfo, int key, double d);
 		int GetSrcParentID(BuffInfo_New buffInfo);
 
 		void NotifyBuffInfo(BuffInfo_New buffInfo, BattleInfoNotifyType nType, BattleNotifyTime nTime);

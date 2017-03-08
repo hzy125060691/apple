@@ -19,7 +19,7 @@ namespace ZzServer.Battle
 			int index = self.GetBuffStateIndex(biffInfo);
 			var time = self.GetBuffStateTime(buffConfig, index) + fixTime;
 			self.SetBuffStateTime(biffInfo, time);
-			self.SetBuffDoubleParam(biffInfo, time, key_ticlLeftTime_BuffInfo);
+			self.SetBuffStateDoubleParam(biffInfo, key_ticlLeftTime_BuffInfo, time);
 		}
 		public override LogicStateTickRet Tick(SkillObj self, BuffInfo_New buffInfo, BuffConfig_New buffConfig)
 		{
@@ -35,10 +35,10 @@ namespace ZzServer.Battle
 				return LogicStateTickRet.TimeFinish;
 			}
 			self.SetBuffStateTime(buffInfo, self.GetBuffStateTime(buffInfo) - self.GetDeltaTime());
-			var leftTickTime = self.GetBuffDoubleParam(buffInfo, key_ticlLeftTime_BuffInfo);
+			var leftTickTime = self.GetBuffStateDoubleParam(buffInfo, key_ticlLeftTime_BuffInfo);
 			if (leftTickTime - self.GetBuffStateTime(buffInfo) >= effectTickTime)
 			{
-				self.SetBuffDoubleParam(buffInfo, leftTickTime - effectTickTime, key_ticlLeftTime_BuffInfo);
+				self.SetBuffStateDoubleParam(buffInfo, key_ticlLeftTime_BuffInfo, leftTickTime - effectTickTime);
 				self.LogInfo("TickBuffState:buffObj[{0}] buff:[{1}] Tick Effect".F(self.GetID(), self.GetBuffID(buffInfo)));
 				ret = LogicStateTickRet.OnEffect;
 			}
