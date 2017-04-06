@@ -16,6 +16,7 @@ namespace ZzServer.Battle
 			{
 				ret.bType = BuffSuperpositionType.AddStateTime;
 				var buff = tarBuff.First();
+				ret.buff =buff;
 				double addTime = tarObj.GetBuffSuperpositionDoubleParam(buffConfig, Key_AddTime_SkillConfig);
 				tarObj.SetBuffTime(buff, tarObj.GetBuffTime(buff) + addTime);
 				tarObj.SetBuffStateTime(buff, tarObj.GetBuffStateTime(buff) + addTime);
