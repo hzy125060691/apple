@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.IO;
 using System;
 using System.Threading;
+using System.Linq;
+using System.Xml;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -23,22 +25,97 @@ public class AssetBundleHelper : MonoBehaviour
 
 	private static AssetBundleManifest manifest = null;
 	//private static object manifest_Sum_LockObj = new object();
+	public class StageInfo
+	{
+		public string name;
+		public DateTime beginTime;
+		public StageInfo(string n = "Init")
+		{
+			name = n;
+			beginTime = DateTime.Now;
+		}
+		public StageInfo(string n, DateTime time)
+		{
+			name = n;
+			beginTime = time;
+		}
+	}
+	private static StageInfo stage = new StageInfo("Default");
+	private static StageInfo lastStage = null;
+	public static StageInfo Stage_C
+	{
+		get
+		{
+			return stage;
+		}
+	}
+	public static string Stage
+	{
+		set
+		{
+			lastStage = stage;
+			stage = new StageInfo(value);
+			//先卸载不需要的AB，后设置预加载新的AB
+			var list = AssetBundleUseAnalysis.StageDiff(lastStage.name, stage.name);
+			AssetBundleDic.Unload(list);
+
+			var preload = AssetBundleUseAnalysis.StagePreload(stage.name);
+			CurNeedPreloadAB.Clear();
+			if(preload != null)
+			{
+				CurNeedPreloadAB.AddRange(preload);
+				if (CurNeedPreloadAB.Count > 0 && Ins != null)
+				{
+					Ins.BeginLoadRes();
+				}
+			}
+		}
+	}
 
 	private static AssetBundleRecord AssetBundleDic = new AssetBundleRecord();
+	private static List<string> CurNeedPreloadAB = new List<string>();
 	//private static Dictionary<string, AssetBundle> AssetBundleDic = new Dictionary<string, AssetBundle>();
 	//private static Dictionary<string, AssetBundle> AssetBundleDic = new Dictionary<string, AssetBundle>();
 	public static AssetBundleHelper Ins = null;
-	private Coroutine LoadResCor = null;
-	private Thread LoadThread = null;
+	private static Coroutine LoadResCor = null;
+	//private Thread LoadThread = null;
 	void Awake()
 	{
 		DontDestroyOnLoad(this);
+		LoadManifestAndPreloadInfo();
 		Ins = this;
+		if(tempNeedLoadList.Count > 0)
+		{
+			foreach(var t in tempNeedLoadList)
+			{
+				Ins.PushResToNeedLoad_Real(t.t1, t.t2, t.t3);
+			}
+			tempNeedLoadList.Clear();
+		}
 	}
 	// 	void Start()
 	// 	{
 	// 	}
-	public void PushResToNeedLoad(string path, Action<UnityEngine.Object> callback, bool bInstantiate = true)
+	private static List<Tuple<string, Action<UnityEngine.Object>, bool>> tempNeedLoadList = new List<Tuple<string, Action<UnityEngine.Object>, bool>>();
+	public static void PushResToNeedLoad(string path, Action<UnityEngine.Object> callback, bool bInstantiate = true)
+	{
+		if(Ins == null)
+		{
+			tempNeedLoadList.Add(new Tuple<string, Action<UnityEngine.Object>, bool>(path, callback, bInstantiate));
+		}
+		else
+		{
+			Ins.PushResToNeedLoad_Real(path, callback, bInstantiate);
+		}
+	}
+	private void BeginLoadRes()
+	{
+		if (LoadResCor == null)
+		{
+			LoadResCor = StartCoroutine(LoadResourceAsyn());
+		}
+	}
+	private void PushResToNeedLoad_Real(string path, Action<UnityEngine.Object> callback, bool bInstantiate)
 	{
 		path = Path.Combine(AssetBundlePrefixPath, path).ToLower();
 		//Debug.Log(path);
@@ -46,27 +123,12 @@ public class AssetBundleHelper : MonoBehaviour
 		{
 			NeedLoadQueue.Enqueue(new KeyValuePair<string, KeyValuePair<bool, Action<UnityEngine.Object>>>(path, new KeyValuePair<bool, Action<UnityEngine.Object>>(bInstantiate, callback)));
 		}
-		if (LoadResCor == null)
-		{
-			LoadResCor = StartCoroutine(LoadResourceAsyn());
-		}
+		BeginLoadRes();
 // 		if (LoadThread==null)
 // 		{
 // 			LoadThread = new Thread(new ThreadStart(ThreadLoadRes));
 // 			LoadThread.Start();
 // 		}
-	}
-	void ThreadLoadRes()
-	{
-		while(true)
-		{
-			Thread.Sleep(1);
-			var a = LoadResourceAsyn();
-			while (a.MoveNext())
-			{
-
-			}
-		}
 	}
 	void OnDestroy()
 	{
@@ -139,7 +201,11 @@ public class AssetBundleHelper : MonoBehaviour
 	/// <returns>针对windows OS Android有所区分的一个名字，区分不是很详细</returns>
 	public static string GetPlatformPathName()
 	{
+#if UNITY_EDITOR
+		return RuntimePlatformToSimplifyName(BuildBundleManager.BuildTargetToRuntimePlatform(EditorUserBuildSettings.activeBuildTarget));
+#else
 		return RuntimePlatformToSimplifyName(Application.platform);
+#endif
 	}
 	/// <summary>
 	/// 把名字加上AB扩展名
@@ -222,166 +288,229 @@ public class AssetBundleHelper : MonoBehaviour
 	/// <returns></returns>
 	private IEnumerator LoadResourceAsyn()
 	{
-		while(NeedLoadQueue.Count > 0)
+
+		string streamingAssetsPath = (PathToPlatformFormat(GetStreamingAssetsPath()));
+		string platformBundlePath = (Combine(streamingAssetsPath, GetPlatformPathName()));
+		while (CurNeedPreloadAB.Count > 0 || NeedLoadQueue.Count > 0)
 		{
-			KeyValuePair<string, KeyValuePair<bool, Action<UnityEngine.Object>>> needLoad;
-			lock (NeedLoadQueue)
+			//先加载需要加载的资源，没有的时候再加载预加载资源
+			while (NeedLoadQueue.Count > 0)
 			{
-				needLoad = NeedLoadQueue.Dequeue();
-			}
-			string loadResourceName = needLoad.Key;
-			var bInstantiate = needLoad.Value.Key;
-			var callback = needLoad.Value.Value;
-			UnityEngine.Object newObj = null;
-			if (UseAssetBundle)
-			{
-				//通过bundle加载
-				string LoadBundleName = ResourceNameToBundleName(loadResourceName);
-				string streamingAssetsPath = (PathToPlatformFormat(GetStreamingAssetsPath()));
-				string platformBundlePath = (Combine(streamingAssetsPath, GetPlatformPathName()));
-				string platformManifestPath = PathToFileUri(Combine(platformBundlePath, GetPlatformPathName()));
+				List<WWW> listWWWs = new List<WWW>();
+				Dictionary<string, string> listDPs = new Dictionary<string, string>();
+				KeyValuePair<string, KeyValuePair<bool, Action<UnityEngine.Object>>> needLoad;
+				lock (NeedLoadQueue)
 				{
+					needLoad = NeedLoadQueue.Dequeue();
+				}
+				string loadResourceName = needLoad.Key;
+				var bInstantiate = needLoad.Value.Key;
+				var callback = needLoad.Value.Value;
+				UnityEngine.Object newObj = null;
+				if (UseAssetBundle)
+				{
+					listDPs.Clear();
+					listWWWs.Clear();
+					//通过bundle加载
+					string LoadBundleName = ResourceNameToBundleName(loadResourceName);
+					//string platformManifestPath = PathToFileUri(Combine(platformBundlePath, GetPlatformPathName()));
+					//{
+					//	if (manifest == null)
+					//	{
+					//		using (WWW www = new WWW(platformManifestPath))
+					//		{
+					//			yield return www;
+					//			if (www.error != null)
+					//			{
+					//				Debug.Assert(false, "www.error != null " + www.error);
+					//			}
+					//			else
+					//			{
+					//				var bundle = www.assetBundle;
+					//				if (bundle != null)
+					//				{
+					//					manifest = (AssetBundleManifest)bundle.LoadAsset("AssetBundleManifest");
+					//					if (manifest != null)
+					//					{
+					//					}
+					//					else
+					//					{
+					//						Debug.Assert(false, "mainfest == null");
+					//					}
+					//					bundle.Unload(false);
+					//				}
+					//				else
+					//				{
+					//					Debug.Assert(false, "bundle == null");
+					//				}
+					//			}
+
+					//		}
+					//	}
+					//}
+					//如果这个时候还为空直接终止
 					if (manifest == null)
 					{
-						using (WWW www = WWW.LoadFromCacheOrDownload(platformManifestPath,1))
+						throw new NullReferenceException("manifest == null");
+						//yield break;
+					}
+					{
+						string[] dps = manifest.GetAllDependencies(LoadBundleName);
+						//AssetBundle[] abs = new AssetBundle[dps.Length];
+						for (int i = 0; i < dps.Length; i++)
 						{
-							yield return www;
-							if (www.error != null)
+							string nameTmp = PathToFileUri(Combine(platformBundlePath, dps[i]));
 							{
-								Debug.Assert(false, "www.error != null " + www.error);
+								if (!AssetBundleDic.ContainsKey(nameTmp))
+								{
+									listWWWs.Add(new WWW(nameTmp));
+
+								}
+								listDPs.Add(nameTmp, dps[i]);
+							}
+						}
+						string name = PathToFileUri(Combine(platformBundlePath, LoadBundleName));
+						{
+							if (!AssetBundleDic.ContainsKey(name))
+							{
+								listWWWs.Add(new WWW(name));
+							}
+						}
+						while (true && listWWWs.Count > 0)
+						{
+							yield return null;
+							for (int i = 0; i < listWWWs.Count;)
+							{
+								var www = listWWWs[i];
+								if (www.error != null)
+								{
+									listWWWs.RemoveAt(i);
+									string info = "www.error != null :" + www.url + " " + www.error;
+									www.Dispose();
+									throw new NullReferenceException(info);
+									//Debug.Assert(false, "wwwtar.error != null :" + www.url +" "+ www.error);
+								}
+								else if (www.isDone)
+								{
+									listWWWs.RemoveAt(i);
+									var bundleTar = www.assetBundle;
+									string key = www.url;
+									www.Dispose();
+									if (bundleTar != null)
+									{
+										AssetBundleDic.Add(key, bundleTar);
+									}
+									else
+									{
+										//Debug.Assert(false, "bundleTar == null :" + www.url);
+										throw new NullReferenceException("bundleTar == null :" + key);
+									}
+								}
+								else
+								{
+									i++;
+								}
+							}
+						}
+						if (!AssetBundleDic.ContainsKey(name, false))
+						{
+							//Debug.LogError("!AssetBundleDic.ContainsKey(name) :" + name);
+							throw new NullReferenceException("!AssetBundleDic.ContainsKey(name) :" + name);
+							//continue;
+							//yield break;
+						}
+						{
+							AssetBundleDic.loadAllDPs(listDPs);
+							var obj = AssetBundleDic.GetAssetBundle(name).LoadAsset(loadResourceName);
+							if (obj != null)
+							{
+								if (bInstantiate)
+								{
+									newObj = Instantiate(obj) as UnityEngine.Object;
+								}
+								else
+								{
+									newObj = obj;
+								}
 							}
 							else
 							{
-								var bundle = www.assetBundle;
-								if (bundle != null)
-								{
-									manifest = (AssetBundleManifest)bundle.LoadAsset("AssetBundleManifest");
-									if (manifest != null)
-									{
-									}
-									else
-									{
-										Debug.Assert(false, "mainfest == null");
-									}
-									bundle.Unload(false);
-								}
-								else
-								{
-									Debug.Assert(false, "bundle == null");
-								}
+								throw new NullReferenceException("obj == null ");
+								//Debug.Assert(false, "obj == null ");
 							}
+							AssetBundleDic.UnloadABUseAnalysis(listDPs, name);
+						}
 
-						}
 					}
-				}
-				//如果这个时候还为空直接终止
-				if (manifest == null)
-				{
-					yield break;
-				}
-				{
-					string[] dps = manifest.GetAllDependencies(LoadBundleName);
-					//AssetBundle[] abs = new AssetBundle[dps.Length];
-					for (int i = 0; i < dps.Length; i++)
-					{
-						string nameTmp = PathToFileUri(Combine(platformBundlePath, dps[i]));
-						{
-							if (!AssetBundleDic.ContainsKey(nameTmp))
-							{
-								using (WWW wwwTmp = WWW.LoadFromCacheOrDownload(nameTmp,1))
-								{
-									yield return wwwTmp;
-									if (wwwTmp.error != null)
-									{
-										Debug.Assert(false, "wwwTmp.error != null " + wwwTmp.error);
-									}
-									//abs[i] = wwwTmp.assetBundle;
-									//Debug.Log(nameTmp + " : " + loadResourceName);
-									AssetBundleDic.Add(nameTmp, wwwTmp.assetBundle);
-								}
-							}
-						}
-					}
-					string name = PathToFileUri(Combine(platformBundlePath, LoadBundleName));
-					{
-						if (!AssetBundleDic.ContainsKey(name))
-						{
-							using (WWW wwwtar = WWW.LoadFromCacheOrDownload(name, 1))
-							{
-								yield return wwwtar;
-								if (wwwtar.error != null)
-								{
-									Debug.Assert(false, "wwwtar.error != null " + wwwtar.error);
-								}
-								else
-								{
-									var bundleTar = wwwtar.assetBundle;
-									if (bundleTar != null)
-									{
-										AssetBundleDic.Add(name, bundleTar);
-									}
-									else
-									{
-										Debug.Assert(false, "bundleTar == null ");
-									}
-								}
-							}
-						}
-					}
-					if (!AssetBundleDic.ContainsKey(name))
-					{
-						yield break;
-					}
-					var obj = AssetBundleDic.GetAssetBundle(name).LoadAsset(loadResourceName);
-					if (obj != null)
-					{
-						if(bInstantiate)
-						{
-							newObj = Instantiate(obj) as UnityEngine.Object;
-						}
-						else
-						{
-							newObj = obj;
-						}
-					}
-					else
-					{
-						Debug.Assert(false, "obj == null ");
-					}
-					// 				for (int i = 0; i < abs.Length; i++)
-					// 				{
-					// 					if (abs[i] != null)
-					// 					{
-					// 						abs[i].Unload(false);
-					// 						abs[i] = null;
-					// 					}
-					// 				}
-				}
-			}
-			else
-			{
-#if UNITY_EDITOR
-				yield return null;
-				var obj = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(loadResourceName);
-				if (obj != null)
-				{
-					newObj = Instantiate(obj) as UnityEngine.Object;
 				}
 				else
 				{
-					Debug.Assert(false, "obj == null here ");
-				}
-				Debug.Log("AssetDataBase.load");
+#if UNITY_EDITOR
+					yield return null;
+					var obj = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(loadResourceName);
+					if (obj != null)
+					{
+						newObj = Instantiate(obj) as UnityEngine.Object;
+					}
+					else
+					{
+						throw new NullReferenceException("obj == null here " + loadResourceName);
+						//Debug.Assert(false, "obj == null here ");
+					}
+					Debug.Log("AssetDataBase.load:" + loadResourceName);
 #endif
-			}
+				}
 
-			if (newObj != null)
-			{
-				callback(newObj);
+				if (newObj != null)
+				{
+					callback(newObj);
+				}
+				else
+				{
+					//Debug.Assert(false, "newObj == null ");
+					throw new NullReferenceException("newObj == null ");
+				}
+
 			}
-			else
+			if(CurNeedPreloadAB.Count > 0)
 			{
-				Debug.Assert(false, "newObj == null ");
+				yield return null;
+				var fAB = CurNeedPreloadAB[0];
+				//string ABName = ResourceNameToBundleName(fAB);
+				string namePreload = PathToFileUri(Combine(platformBundlePath, fAB));
+				{
+					if (!AssetBundleDic.ContainsKey(namePreload))
+					{
+						using (WWW www = new WWW(namePreload))
+						{
+							while (!www.isDone && (www.error == null || www.error.Equals("")))
+							{
+								yield return null;
+							}
+							if (www.error != null)
+							{
+								string info = "www.error != null :" + www.url + " " + www.error;
+								www.Dispose();
+								throw new NullReferenceException(info);
+							}
+							else if (www.isDone)
+							{
+								var bundleTar = www.assetBundle;
+								string key = www.url;
+								www.Dispose();
+								if (bundleTar != null)
+								{
+									AssetBundleDic.Add(key, bundleTar);
+								}
+								else
+								{
+									throw new NullReferenceException("bundleTar == null :" + key);
+								}
+							}
+						}
+					}
+				}
+				CurNeedPreloadAB.RemoveAt(0);
 			}
 		}
 		LoadResCor = null;
@@ -405,36 +534,186 @@ public class AssetBundleHelper : MonoBehaviour
 #else
 	public const bool UseAssetBundle = true;
 #endif
+
+	public static void LoadManifestAndPreloadInfo()
+	{
+		//这里毫无疑问需要同步加载，但是发现使用了using (WWW www = new WWW(platformManifestPath))的地方好像确实是同步的，可能是using有自动释放机制所以它不得不同步的原因？
+		string streamingAssetsPath = (PathToPlatformFormat(GetStreamingAssetsPath()));
+		string platformBundlePath = (Combine(streamingAssetsPath, GetPlatformPathName()));
+		//manifest
+		if (manifest == null)
+		{
+			string platformManifestPath = PathToFileUri(Combine(platformBundlePath, GetPlatformPathName()));
+			using (WWW www = new WWW(platformManifestPath))
+			{
+				if (www.error != null)
+				{
+					Debug.Assert(false, "www.error != null " + www.error);
+				}
+				else
+				{
+					var bundle = www.assetBundle;
+					if (bundle != null)
+					{
+						manifest = (AssetBundleManifest)bundle.LoadAsset("AssetBundleManifest");
+						if (manifest != null)
+						{
+						}
+						else
+						{
+							throw new NullReferenceException("mainfest == null");
+						}
+						bundle.Unload(false);
+					}
+					else
+					{
+						throw new NullReferenceException("var bundle = www.assetBundle; bundle == null");
+					}
+				}
+			}
+		}
+		//PreloadInfo
+		//这不是一个必须读取成功的文件
+		try
+		{
+			{
+				string resName = AssetBundleUseAnalysis.GetXmlNameWithExt();
+				string platformManifestPath = PathToFileUri(Combine(platformBundlePath, AssetBundlePrefixPath, ResourceNameToBundleName(resName)));
+				using (WWW www = new WWW(platformManifestPath))
+				{
+					if (www.error != null)
+					{
+						//Debug.Assert(false, "www.error != null " + www.error);
+						Debug.LogWarning(@"www.error != null " + www.error);
+					}
+					else
+					{
+						if (www.assetBundle != null)
+						{
+							var asset = www.assetBundle.LoadAsset<TextAsset>(resName);
+							if (asset != null)
+							{
+								XmlDocument doc = new XmlDocument();
+								doc.LoadXml(asset.text);
+								AssetBundleUseAnalysis.LoadPreloadInfo(doc);
+							}
+							else
+							{
+								Debug.LogWarning(@"if (asset != null) : " + platformManifestPath + " Res: " + resName);
+							}
+							www.assetBundle.Unload(false);
+						}
+						else
+						{
+							Debug.LogWarning(@"if (www.assetBundle != null) : " + platformManifestPath);
+						}
+					}
+				}
+			}
+		}
+		catch(Exception e)
+		{
+			Debug.LogWarning(e);
+		}
+
+	}
 }
 
 public class AssetBundleRecord
 {
-	private Dictionary<string, AssetBundle> assetBundleDic = new Dictionary<string, AssetBundle>();
-	private List<KeyValuePair<string, string>> assetBundleUseTime = new List<KeyValuePair<string, string>>();
-
-	public bool ContainsKey(string key)
+	public static bool bABUseAnalysis = true;
+	void OutputXml()
 	{
-		assetBundleUseTime.Add(new KeyValuePair<string, string>(key.ToLower(), DateTime.Now.ToString() + ":ContainsKey"));
+		AssetBundleUseAnalysis.OutputABUseXml();
+	}
+	private Dictionary<string, AssetBundle> assetBundleDic = new Dictionary<string, AssetBundle>();
+
+	public bool ContainsKey(string key, bool bAnalysis = true)
+	{
+		if(bABUseAnalysis && bAnalysis)
+		{
+			AssetBundleUseAnalysis.AddABUse(key.ToLower(), AssetBundleUseAnalysis.ABDetailRecord.RecordType.ContainsKey);
+		}
 		PrintLog();
 		return assetBundleDic.ContainsKey(key.ToLower());
 	}
 
 	public AssetBundle GetAssetBundle(string key)
 	{
-// 		if (!ContainsKey(key))
-// 		{
-// 			return null;
-// 		}
-		assetBundleUseTime.Add(new KeyValuePair<string, string>(key.ToLower(), DateTime.Now.ToString() + ":Get"));
+		if (bABUseAnalysis)
+		{
+			AssetBundleUseAnalysis.AddABUse(key.ToLower(), AssetBundleUseAnalysis.ABDetailRecord.RecordType.Get);
+		}
 		PrintLog();
 		return assetBundleDic[key.ToLower()];
 	}
 	public void Add(string key, AssetBundle bundle)
 	{
+		if (bABUseAnalysis)
+		{
+			AssetBundleUseAnalysis.AddABUse(key.ToLower(), AssetBundleUseAnalysis.ABDetailRecord.RecordType.Add);
+		}
 		assetBundleDic.Add(key.ToLower(), bundle);
-		assetBundleUseTime.Add(new KeyValuePair<string, string>(key.ToLower(), DateTime.Now.ToString() + ":Add"));
 		PrintLog();
 	}
+	static int mm = 0;
+	public List<UnityEngine.Object> loadAllDPs(Dictionary<string, string> keys)
+	{
+		string key = "";
+		List<UnityEngine.Object> ret = new List<UnityEngine.Object>();
+		foreach (var k in keys)
+		{
+			key = k.Key.ToLower();
+			if (assetBundleDic.ContainsKey(key))
+			{
+				ret.AddRange(assetBundleDic[key].LoadAllAssets());
+				//var ls = assetBundleDic[key].LoadAllAssets();
+				// 				foreach (var l in ls)
+				// 				{
+				// 					Debug.LogError("loadAll:"+ l.name);
+				// 				}
+			}
+		}
+		return ret;
+	}
+	public void UnloadABUseAnalysis(Dictionary<string, string> keys, string TarAB = "")
+	{
+		if (bABUseAnalysis)
+		{
+			Unload(keys.Select(k=>k.Key));
+		}
+	}
+	public void Unload(IEnumerable<string> keys ,string TarAB = "")
+	{
+		//mm++;
+		if(keys == null)
+		{
+			return;
+		}
+		string key = "";
+		if(!TarAB.Equals(""))
+		{
+			key = TarAB.ToLower();
+			if (assetBundleDic.ContainsKey(key))
+			{
+				//Debug.LogWarning("Unload:" + mm + ":" + assetBundleDic[key].name);
+				assetBundleDic[key].Unload(false);
+				assetBundleDic.Remove(key);
+			}
+		}
+		foreach (var k in keys)
+		{
+			key = k.ToLower();
+			if (assetBundleDic.ContainsKey(key))
+			{
+				//Debug.LogWarning("Unload:" + mm + ":"+ assetBundleDic[key].name);
+				
+				assetBundleDic[key].Unload(false);
+				assetBundleDic.Remove(key);
+			}
+		}
+	}
+
 	private void PrintLog()
 	{
 		// 		foreach (var msg in assetBundleUseTime[assetBundleUseTime.Count-1])
@@ -446,6 +725,7 @@ public class AssetBundleRecord
 	}
 	public void Clear()
 	{
+		OutputXml();
 		foreach (var ab in assetBundleDic)
 		{
 			ab.Value.Unload(false);
@@ -454,3 +734,15 @@ public class AssetBundleRecord
 	}
 }
 
+public class Tuple<T1,T2,T3>
+{
+	public T1 t1;
+	public T2 t2;
+	public T3 t3;
+	public Tuple(T1 tt1, T2 tt2, T3 tt3)
+	{
+		t1 = tt1;
+		t2 = tt2;
+		t3= tt3;
+	}
+}

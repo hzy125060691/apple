@@ -17,9 +17,9 @@ public class AssetBundleTest : MonoBehaviour
 		if (load && AssetBundleHelper.Ins != null)
 		{
 			load = !load;
-			AssetBundleHelper.Ins.PushResToNeedLoad(TestLoadName1, (o) => Debug.Log(o.name));
-			//AssetBundleHelper.Ins.PushResToNeedLoad(TestLoadName2, (o) => Debug.Log(o.name));
- 			//AssetBundleHelper.Ins.PushResToNeedLoad(TestLoadName3, (o) => Debug.Log(o.name));
+			AssetBundleHelper.PushResToNeedLoad(TestLoadName1, (o) => Debug.Log(o.name));
+			//AssetBundleHelper.PushResToNeedLoad(TestLoadName2, (o) => Debug.Log(o.name));
+ 			//AssetBundleHelper.PushResToNeedLoad(TestLoadName3, (o) => Debug.Log(o.name));
 // 			StartCoroutine(AssetBundleHelper.LoadResourceAsyn(TestLoadName1, (o)=>Debug.Log(o.name)));
 // 			StartCoroutine(AssetBundleHelper.LoadResourceAsyn(TestLoadName2, (o)=>Debug.Log(o.name)));
 // 			StartCoroutine(AssetBundleHelper.LoadResourceAsyn(TestLoadName3, (o) => Debug.Log(o.name)));

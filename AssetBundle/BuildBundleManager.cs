@@ -780,7 +780,7 @@ public class BuildBundleManager
 	/// </summary>
 	/// <param name="bt">目标类型</param>
 	/// <returns>一个假想的运行时平台</returns>
-	private static RuntimePlatform BuildTargetToRuntimePlatform(BuildTarget bt)
+	public static RuntimePlatform BuildTargetToRuntimePlatform(BuildTarget bt)
 	{
 		RuntimePlatform platform;
 		switch (bt)
@@ -861,37 +861,46 @@ public class BuildBundleManager
 		AssetDatabase.Refresh();
 	}
 
-
-	[MenuItem("AssetBundle/BuildAB_Win64")]
+	[MenuItem("AssetBundle/2.Build/BuildAB_Win64")]
 	public static void BuildWin64()
 	{
 		BuildAssetBundle(BuildAssetBundleOptions.None, BuildTarget.StandaloneWindows64);
 	}
-	[MenuItem("AssetBundle/moveAB_win64")]
+	[MenuItem("AssetBundle/3.Move/moveAB_win64")]
 	public static void MoveTest()
 	{
 		MoveAssetBundleToStreamingAssets(BuildTarget.StandaloneWindows64);
 	}
 
-	[MenuItem("AssetBundle/BuildAB_IOS")]
+	[MenuItem("AssetBundle/2.Build/BuildAB_IOS")]
 	public static void BuildIOS()
 	{
 		BuildAssetBundle(BuildAssetBundleOptions.None, BuildTarget.iOS);
 	}
-	[MenuItem("AssetBundle/moveAB_IOS")]
+	[MenuItem("AssetBundle/3.Move/moveAB_IOS")]
 	public static void MoveIOS()
 	{
 		MoveAssetBundleToStreamingAssets(BuildTarget.iOS);
 	}
-	[MenuItem("AssetBundle/BuildAB_Android")]
+	[MenuItem("AssetBundle/2.Build/BuildAB_Android")]
 	public static void BuildAndroid()
 	{
 		BuildAssetBundle(BuildAssetBundleOptions.None, BuildTarget.Android);
 	}
-	[MenuItem("AssetBundle/moveAB_Android")]
+	[MenuItem("AssetBundle/3.Move/moveAB_Android")]
 	public static void MoveAndroid()
 	{
 		MoveAssetBundleToStreamingAssets(BuildTarget.Android);
+	}
+	[MenuItem("AssetBundle/4.BuildAB_CurrentBuildSettingPlatform")]
+	public static void Build()
+	{
+		BuildAssetBundle(BuildAssetBundleOptions.None, EditorUserBuildSettings.activeBuildTarget);
+	}
+	[MenuItem("AssetBundle/5.moveAB_CurrentBuildSettingPlatform")]
+	public static void Move()
+	{
+		MoveAssetBundleToStreamingAssets(EditorUserBuildSettings.activeBuildTarget);
 	}
 }
 /// <summary>
@@ -899,7 +908,7 @@ public class BuildBundleManager
 /// </summary>
 public class MyEditor : EditorWindow
 {
-	[MenuItem("AssetBundle/设置编辑器下AssetBundle的一些信息")]
+	[MenuItem("AssetBundle/1.设置编辑器下AssetBundle的一些信息")]
 	static void AddWindow()
 	{
 		//创建窗口
@@ -986,6 +995,8 @@ public class MyEditor : EditorWindow
 		//**************************************************************************
 		GUILayout.BeginArea(new Rect(0, LayoutOneHeight, position.width, position.height));
 		GUILayout.Label("Build AssetBundle的时候:", titleSytle);
+		GUILayout.Label("本打包脚本会将制定目录下所有的资源单独打包，被引用的资源如果被共享则单独打包，未共享的被一同打包:", titleSytle);
+
 		//输出目录
 		{
 			GUILayout.BeginHorizontal();
