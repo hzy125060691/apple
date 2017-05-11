@@ -8,21 +8,24 @@ public class AssetBundleTest : MonoBehaviour
 {
 	public bool load = true;
 	public int UpdateCount = 0;
-	public string TestLoadName3 = @"Assets/__ArtRes/Prefabs/Tank/hero_xiniu_01.prefab";
-	public string TestLoadName1 = @"assets/__artres/prefabs/tank/hero_xiniu_01.prefab";
-	public string TestLoadName2 = @"assets/__artres/prefabs/tank/hero_xiniu_01.prefab";
+	public string TestLoadName3 = @"Assets/__ArtRes/reS/Prefabs/Tank/hero_xiniu_01.prefab";
+	public string TestLoadName1 = @"assets/__artres/reS/prefabs/tank/hero_xiniu_01.prefab";
+	public string TestLoadName2 = @"assets/__artres/reS/prefabs/tank/hero_xiniu_01.prefab";
 	void Update()
 	{
 		UpdateCount++;
-		if (load && AssetBundleHelper.Ins != null)
+		if (load && AssetBundleHelper.EnableUseRes())
 		{
 			load = !load;
 			AssetBundleHelper.PushResToNeedLoad(TestLoadName1, (o) => Debug.Log(o.name));
+			var go = AssetBundleHelper.LoadResource_Sync<GameObject>(TestLoadName1);
+			go = Instantiate(go);
+			go.transform.parent = this.transform;
 			//AssetBundleHelper.PushResToNeedLoad(TestLoadName2, (o) => Debug.Log(o.name));
- 			//AssetBundleHelper.PushResToNeedLoad(TestLoadName3, (o) => Debug.Log(o.name));
-// 			StartCoroutine(AssetBundleHelper.LoadResourceAsyn(TestLoadName1, (o)=>Debug.Log(o.name)));
-// 			StartCoroutine(AssetBundleHelper.LoadResourceAsyn(TestLoadName2, (o)=>Debug.Log(o.name)));
-// 			StartCoroutine(AssetBundleHelper.LoadResourceAsyn(TestLoadName3, (o) => Debug.Log(o.name)));
+			//AssetBundleHelper.PushResToNeedLoad(TestLoadName3, (o) => Debug.Log(o.name));
+			// 			StartCoroutine(AssetBundleHelper.LoadResourceAsyn(TestLoadName1, (o)=>Debug.Log(o.name)));
+			// 			StartCoroutine(AssetBundleHelper.LoadResourceAsyn(TestLoadName2, (o)=>Debug.Log(o.name)));
+			// 			StartCoroutine(AssetBundleHelper.LoadResourceAsyn(TestLoadName3, (o) => Debug.Log(o.name)));
 		}
 	}
 
