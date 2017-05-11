@@ -169,8 +169,8 @@ namespace ZzServer.Battle
 			if (self.GetBuffTime(buffInfo) > 0)
 			{
 				self.SetBuffTime(buffInfo, 0);
-				self.NotifyBuffInfo(buffInfo, BattleInfoNotifyType.Time_Buff, BattleNotifyTime.TickEnd);
 			}
+			self.NotifyBuffInfo(buffInfo, BattleInfoNotifyType.Time_Buff, BattleNotifyTime.TickEnd);
 		}
 
 		public virtual bool IsActionLimited(SkillObj self, ActionLimitType limit, BuffInfo_New buffInfo, BuffConfig_New buffConfig)
