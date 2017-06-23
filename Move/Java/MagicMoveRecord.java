@@ -1,7 +1,6 @@
-package com.cyou.fusion.Battle.Move;
+package com.cyou.fusion.game.Battle.Move;
 
-import com.cyou.fusion.Battle.Base.Tuple4;
-import com.cyou.fusion.Battle.SkillBullet.SkillVector3;
+import com.cyou.fusion.game.Battle.SkillBullet.SkillVector3;
 import com.github.jlinqer.collections.List;
 
 /**
@@ -9,10 +8,27 @@ import com.github.jlinqer.collections.List;
  */
 public class MagicMoveRecord
 {
+    public enum SpeedChangeType
+    {
+        None(0),
+        SkillUp(1),//技能加速
+        SkillDown(2),//技能减速
+        ItemUp(3),//加速物品
+        ItemDown(4);//加速减速
+        int num;
+        SpeedChangeType(int n) {
+            num = n;
+        }
+        int GetNum() {
+            return num;
+        }
+    }
     public MagicCommandRecord Command = null;
 
     private long TickTime_Ms_Long = -1;
     private long CMDTime = -1;
+    private SpeedChangeType SpeedType = SpeedChangeType.None;
+    private int CMDIdx = -1;
 
     private SkillVector3 Pos = new SkillVector3(-1, -1, -1);
 
@@ -26,10 +42,10 @@ public class MagicMoveRecord
     private float MinZ = -1;
     private float MaxZ = -1;
 
-    private static final float OutdateTime = 1000 * 1000;//毫秒
-    private static final float CenterPoint = 0f;
-    private static float f05MinusCenterPoint = 0.5f - CenterPoint;
-
+    public static final float OutdateTime = 1000 * 1000;//毫秒
+    public static final float CenterPoint = 0f;
+    public static final float f05MinusCenterPoint = 0.5f - CenterPoint;
+    public static final float EdgeWidth = 1f;
 
     public float GetSpeed()
     {
@@ -70,11 +86,14 @@ public class MagicMoveRecord
         Dir.z = 0;
 
         Speed = -1;
+        SpeedType = SpeedChangeType.None;
+        CMDIdx = -1;
+
 
         Command = null;
 
     }
-    public void SetInitPos(float x, float z, long NowTime_Ms_Long, float dirX, float dirZ, float speed, long cmdTime, float minX, float maxX, float minZ, float maxZ)
+    public void SetInitPos(float x, float z, long NowTime_Ms_Long, float dirX, float dirZ, float speed, long cmdTime, float minX, float maxX, float minZ, float maxZ, SpeedChangeType speedType, int cmdIdx)
     {
         Pos.x = x;
         Pos.y = 0;
@@ -86,10 +105,14 @@ public class MagicMoveRecord
         TickTime_Ms_Long = NowTime_Ms_Long;
         CMDTime = cmdTime;
 
-        MinX = minX + CenterPoint;
-        MaxX = maxX + CenterPoint - 1;
-        MinZ = minZ + CenterPoint;
-        MaxZ = maxZ + CenterPoint - 1;
+        MinX = minX + CenterPoint + EdgeWidth;
+        MaxX = maxX + CenterPoint - 1 - EdgeWidth;
+        MinZ = minZ + CenterPoint + EdgeWidth;
+        MaxZ = maxZ + CenterPoint - 1 - EdgeWidth;
+
+        SpeedType = speedType;
+        CMDIdx = cmdIdx;
+
     }
 
 
@@ -144,7 +167,10 @@ public class MagicMoveRecord
     {
         if(Speed <= 0 || (Dir.x == 0 && Dir.z == 0) || Dir.x * Dir.z != 0)
         {
-            return  -1;
+            nextPos.x = Pos.x;
+            nextPos.z = Pos.z;
+            return nowTime;
+
         }
         long time = -1;
         SkillVector3 nowPos = new SkillVector3();
@@ -177,30 +203,22 @@ public class MagicMoveRecord
     {
         //java.text.DecimalFormat decimalFormat=new java.text.DecimalFormat(".00000000");//构造方法的字符格式这里如果小数不足x位,会以0补足.
         //String test2 = decimalFormat.format((float)Math.round(0.50000f));
-        return "Time:"+TickTime_Ms_Long+" Pos:" + Pos.toString() + " Dir:" + Dir.toString() + " Speed:"+ Speed + " CMDTime:"+CMDTime;
+        return "Index:"+ CMDIdx + " Time:"+TickTime_Ms_Long+" Pos:" + Pos.toString() + " Dir:" + Dir.toString() + " Speed:"+ Speed + " CMDTime:"+CMDTime + " Type:" + SpeedType;
     }
 
     private int UnifyRound(float f)
     {
         return (int)Math.floor(f+0.5f);
     }
-//    public List<SkillVector3> CalcPoints_2D(MagicMoveRecord other) throws Exception
-//    {
-//        List<SkillVector3> tmpList = new List<SkillVector3>();
-//        //两端点不计入
-//        SkillVector3 otherPos = other.GetPos();
-//        if(Pos.x == otherPos.x && Pos.z != otherPos.z)
-//        {
-//            for
-//        }
-//        else if(Pos.x != otherPos.x && Pos.z == otherPos.z)
-//        {
-//
-//        }
-//        else
-//        {
-//            throw new Exception("CalcPoints(MagicMoveRecord other):"+ Pos.toString() + ":"+other.GetPos().toString());
-//        }
-//        return  tmpList;
-//    }
+
+    public SpeedChangeType GetSpeedType()
+    {
+        return SpeedType;
+    }
+
+    public int GetCMDIndex()
+    {
+        return CMDIdx;
+    }
+
 }

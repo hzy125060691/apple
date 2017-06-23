@@ -1,4 +1,4 @@
-package com.cyou.fusion.Battle.Move;
+package com.cyou.fusion.game.Battle.Move;
 
 /**
  * Created by huangzhenyu on 2017/5/22.
