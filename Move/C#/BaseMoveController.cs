@@ -27,6 +27,8 @@ public class BaseMoveController
 
 	//public List<string> Infos = new List<string>();
 
+
+
 	public SkillVector3 GetCalcResult()
 	{
 		return NextPos;
@@ -52,7 +54,7 @@ public class BaseMoveController
 		MinZ = minZ;
 		MaxZ = maxZ;
 
-		CurMagicRecord.SetInitPos(x, z, NowTime_Ms_Long, dirX, dirZ, speed, NowTime_Ms_Long, MinX, MaxX, MinZ, MaxZ);
+		CurMagicRecord.SetInitPos(x, z, NowTime_Ms_Long, dirX, dirZ, speed, NowTime_Ms_Long, MinX, MaxX, MinZ, MaxZ, SpeedChangeType.None, -1);
 	}
 
 	public void Clear()
@@ -71,10 +73,133 @@ public class BaseMoveController
 		CurNeedExeMoves.Clear();
 		BacktrackingPoints.Clear();
 		TrackingPoints.Clear();
+		NeedFixRecords.Clear();
 	}
-
-	public void TestAddMoveCtrlCommand(long time, float dirX, float dirZ, float speed/*, long NowTime_Ms_Long*/, int index)
+	public enum FindCMDType
 	{
+		None,
+		History,
+		Now,
+		Future,
+	}
+	private List<MagicMoveRecord> NeedFixRecords = new List<MagicMoveRecord>();
+	private void FixToFuture()
+	{
+		FutureExeMoves.AddRange(NeedFixRecords);
+		NeedFixRecords.Clear();
+	}
+	private MagicMoveRecord FixMMRs(MagicMoveRecord first)
+	{
+		MagicMoveRecord last = first;
+		for (int i = 0; i < NeedFixRecords.Count;)
+		{
+			if (last != null)
+			{
+				MagicMoveRecord tmp = NeedFixRecords[i];
+				var temp2 = CalcNextMMR(last, tmp.GetDir().x, tmp.GetDir().z, tmp.GetSpeedType(), tmp.GetTime(), tmp.GetCMDIndex(), tmp);
+				if (temp2 != null)
+				{
+					i++;
+				}
+				else
+				{
+					if (last == first && first.GetCMDIndex() > tmp.GetCMDIndex())
+					{
+						first = tmp;
+					}
+					else
+					{
+						Log("if(last==first && first.GetCMDIndex() > tmp.GetCMDIndex())@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@22");
+					}
+					NeedFixRecords.RemoveAt(i);
+					Log("discard:" + tmp.ToString());
+				}
+				last = tmp;
+			}
+		}
+		return first;
+	}
+	private MagicMoveRecord CalcNextMMR(MagicMoveRecord last, float dirX, float dirZ, SpeedChangeType speedType, long time, int index, MagicMoveRecord newRecord = null)
+	{
+		//MagicMoveRecord newRecord = null;
+		SkillVector3 curDir = last.GetDir();
+		float curSpeed = last.GetSpeed();
+		if(newRecord == null)
+		{
+			newRecord = GetNewRecord();
+		}
+		if (speedType != SpeedChangeType.None)
+		{
+			SkillVector3 beginPos = new SkillVector3();
+			last.GetNextPos_2D(time, ref beginPos);
+			//newRecord = GetNewRecord();
+			newRecord.SetInitPos(beginPos.x, beginPos.z, time, curDir.x, curDir.z, CalcSpeed(speedType, curSpeed), time, MinX, MaxX, MinZ, MaxZ, speedType, index);
+
+			//FixMMRs(newRecord);
+			Log(index + " Speed Changed : " + curSpeed + "---->>>----" + newRecord.GetSpeed() + " BeginPos:" + beginPos.ToString() + " NowPos:" + NextPos.ToString() + " Time:" + newRecord.GetTime());
+		}
+		else
+		{
+			SkillVector3 beginPos = new SkillVector3();
+			if (last.GetTime() == newRecord.GetTime())
+			{
+				return null;
+			}
+			long nextTime = last.GetNextMagicPosAndTime_2D(time, ref beginPos);
+			//newRecord = GetNewRecord();
+			newRecord.SetInitPos(beginPos.x, beginPos.z, nextTime, dirX, dirZ, last.GetSpeed(), time, MinX, MaxX, MinZ, MaxZ, speedType, index);
+			Log(index + " Dir Changed : " + "(" + curDir.x + "," + curDir.z + ")" + "---->>>----" + "(" + dirX + "," + dirZ + ")" + " BeginPos:" + beginPos.ToString() + " NowPos:" + NextPos.ToString() + " Time:" + newRecord.GetTime());
+		}
+		return newRecord;
+	}
+	public bool TestCancelMoveCtrlCommand(long time, float dirX, float dirZ, SpeedChangeType speedType, int index, int deleteIndex)
+	{
+		DebugSkillUpDown("Cancel Before ADD");
+		bool ret = true;
+		NeedFixRecords.Clear();
+
+		//如果要取消的操作已经执行了，那么就不需要取消了
+		if (FutureExeMoves.Count > 0)
+		{
+			int deleteIdx = -1;
+			bool bAdd = false;
+			MagicMoveRecord tar = null;
+			for (int i = FutureExeMoves.Count - 1; i >= 0; i--)
+			{
+				var tmp = FutureExeMoves[i];
+				if (tmp.GetCMDIndex() == deleteIndex && tmp.GetSpeedType() == SpeedChangeType.SkillDown)
+				{
+					bAdd = true;
+					deleteIdx = i;
+					tar = tmp;
+					break;
+				}
+			}
+			if(deleteIdx >= 0)
+			{
+
+				DebugConsole.LogWarning("discard 22222:" + tar.ToString());
+				FutureExeMoves.RemoveAt(deleteIdx);
+			}
+
+
+			if(bAdd)
+			{
+				ret = true;
+				TestAddMoveCtrlCommand(time, dirX, dirZ, speedType, index);
+			}
+			else
+			{
+				ret = false;
+			}
+
+		}
+		DebugSkillUpDown("Cancel After ADD");
+		return ret;
+	}
+	public void TestAddMoveCtrlCommand(long time, float dirX, float dirZ, SpeedChangeType speedType, int index)
+	{
+		DebugSkillUpDown("Before ADD");
 		//检查是否是合法参数
 		//如果这个时间点比服务器时间更早
 		//if(time <= CurMagicRecord.GetTime())
@@ -84,103 +209,167 @@ public class BaseMoveController
 		//先找到该时间点前一个MagicMoveRecord是哪个，可能是当前的MagicMoveRecord,也可能是缓存队列里某一个，所以遍历一下
 		//上边已经排除了一个不可能的情况，现在看其他情况
 		{
+			NeedFixRecords.Clear();
+
 			MagicMoveRecord cmdLastRecord = null;
-			if(HistoryRecords.Count > 0)
+			FindCMDType find = FindCMDType.None;
+			int findIdx = -1;
+			if (HistoryRecords.Count > 0)
 			{
-				MagicMoveRecord tmp = HistoryRecords[HistoryRecords.Count - 1];
-				if (tmp.GetTime() <= time && tmp.GetCMDTime() <= time)
+				for(int i = HistoryRecords.Count - 1; i >= 0; i--)
 				{
-					cmdLastRecord = tmp;
-				}
-			}
-			// 			foreach (var tmp in HistoryRecords)
-			// 			{
-			// 
-			// 				//Log("HistoryRecords:" + tmp.ToString());
-			// 				if (tmp.GetTime() <= time && tmp.GetCMDTime() <= time)
-			// 				{
-			// 					cmdLastRecord = tmp;
-			// 				}
-			// 				else
-			// 				{
-			// 					//这是个优先权队列，所以一旦发现不满足了就都不用检查了
-			// 					break;
-			// 				}
-			// 			}
-			if (CurMagicRecord.GetTime() <= time && CurMagicRecord.GetCMDTime() <= time)
-			{
-				cmdLastRecord = CurMagicRecord;
-				//Log("CurMagicRecord:" + CurMagicRecord.ToString());
-			}
-			if (FutureExeMoves.Count > 0)
-			{
-				foreach (var tmp in FutureExeMoves)
-				{
-					//Log("FutureExeMoves:" + tmp.ToString());
+					MagicMoveRecord tmp = HistoryRecords[i];
 					if (tmp.GetTime() <= time && tmp.GetCMDTime() <= time)
 					{
 						cmdLastRecord = tmp;
+						break;
 					}
 					else
 					{
-						//这是个优先权队列，所以一旦发现不满足了就都不用检查了
-						break;
+						findIdx = i;
+						find = FindCMDType.History;
+					}
+				}
+			}
+
+			{
+				if (find == FindCMDType.None)
+				{
+					if (CurMagicRecord != null && CurMagicRecord.GetTime() <= time && CurMagicRecord.GetCMDTime() <= time)
+					{
+						cmdLastRecord = CurMagicRecord;
+						//Log("CurMagicRecord:" + CurMagicRecord.ToString());
+					}
+					else
+					{
+						find = FindCMDType.Now;
+					}
+				}
+				if (find == FindCMDType.None)
+				{
+					if (FutureExeMoves.Count > 0)
+					{
+						foreach (var tmp in FutureExeMoves)
+						{
+							//Log("FutureExeMoves:" + tmp.ToString());
+							if (tmp.GetTime() <= time && tmp.GetCMDTime() <= time)
+							{
+								cmdLastRecord = tmp;
+							}
+							else
+							{
+								findIdx = FutureExeMoves.IndexOf(tmp);
+								find = FindCMDType.Future;
+								//这是个优先权队列，所以一旦发现不满足了就都不用检查了
+								break;
+							}
+						}
 					}
 				}
 			}
 
 			Log("LastMoveCmd:" + cmdLastRecord.ToString());
 			//根据上一个关键节点计算这个关键节点
-			//强调一下，目前，也就是2017/05/17,单条命令只能是改速度或者是改方向，而且改变成的速度方向不可能是0，0只允许在初始值中
-			if (speed == 0 || (dirX == 0 && dirZ == 0))
+			if (dirX == 0 && dirZ == 0 && speedType == SpeedChangeType.None)
 			{
-				Log("speed == 0 || (dirX == 0 && dirZ == 0)");
+				Log("dirX == 0 && dirZ == 0");
 				return;
 			}
 			SkillVector3 curDir = cmdLastRecord.GetDir();
 			float curSpeed = cmdLastRecord.GetSpeed();
-			if (curDir.x == dirX && curDir.z == dirZ && curSpeed == speed)
+			if (curDir.x == dirX && curDir.z == dirZ && speedType == SpeedChangeType.None)
 			{
-				Log("curDir.x == dirX && curDir.z == dirZ && curSpeed == speed");
+				Log("curDir.x == dirX && curDir.z == dirZ && speedType == SpeedChangeType.None");
 				return;
 			}
-			MagicMoveRecord newRecord = null;
+			MagicMoveRecord newRecord = CalcNextMMR(cmdLastRecord, dirX, dirZ, speedType, time, index);
+			Log(" find ret :" + find);
 			//速度改变的情况
-			if (curSpeed != speed)
+			//if (speedType != SpeedChangeType.None)
 			{
-				SkillVector3 beginPos = new SkillVector3();
-				cmdLastRecord.GetNextPos_2D(time, ref beginPos);
-				newRecord = GetNewRecord();
-				newRecord.SetInitPos(beginPos.x, beginPos.z, time, dirX, dirZ, speed, time, MinX, MaxX, MinZ, MaxZ);
-				Log(index + " Speed Changed : " + curSpeed + "---->>>----" + speed + " BeginPos:" + beginPos.ToString() + " NowPos:" + NextPos.ToString());
+				switch (find)
+				{
+					case FindCMDType.Future:
+						{
+							if(FutureExeMoves.Count > findIdx)
+							{
+								NeedFixRecords.AddRange(FutureExeMoves.GetRange(findIdx, FutureExeMoves.Count - findIdx));
+								FutureExeMoves.RemoveRange(findIdx, FutureExeMoves.Count - findIdx);
+							}
+						}
+						break;
+					case FindCMDType.History:
+						{
+							if (HistoryRecords.Count > findIdx)
+							{
+								NeedFixRecords.AddRange(HistoryRecords.GetRange(findIdx, HistoryRecords.Count - findIdx));
+								HistoryRecords.RemoveRange(findIdx, HistoryRecords.Count - findIdx);
+							}
+
+							if (findIdx == 0)
+							{
+								throw new Exception("findIdx == 0");
+							}
+
+							NeedFixRecords.Add(CurMagicRecord);
+							CurMagicRecord = HistoryRecords[findIdx - 1];
+							HistoryRecords.RemoveAt(findIdx - 1);
+
+							if (FutureExeMoves.Count > 0)
+							{
+								NeedFixRecords.AddRange(FutureExeMoves);
+								FutureExeMoves.Clear();
+							}
+						}
+						break;
+					
+					case FindCMDType.Now:
+						{
+							NeedFixRecords.Add(CurMagicRecord);
+							if (HistoryRecords.Count == 0)
+							{
+								throw new Exception("HistoryRecords.Count() == 0");
+							}
+							CurMagicRecord = HistoryRecords[HistoryRecords.Count - 1];
+							HistoryRecords.RemoveAt(HistoryRecords.Count - 1);
+							if (FutureExeMoves.Count > 0)
+							{
+								NeedFixRecords.AddRange(FutureExeMoves);
+								FutureExeMoves.Clear();
+							}
+						}
+						break;
+				}
+
+				newRecord = FixMMRs(newRecord);
+				//Log(index + " Speed Changed : " + curSpeed + "---->>>----" + speed + " BeginPos:" + beginPos.ToString() + " NowPos:" + NextPos.ToString());
 			}
-			else
-			{
-				//方向改变的情况,由于我们的版本现在，也就是2017/05/17只允许整格子的0处改变方向，所以时间会略微不一样
-				SkillVector3 beginPos = new SkillVector3();
-				long nextTime = cmdLastRecord.GetNextMagicPosAndTime_2D(time, ref beginPos);
-				newRecord = GetNewRecord();
-				newRecord.SetInitPos(beginPos.x, beginPos.z, nextTime, dirX, dirZ, speed, time, MinX, MaxX, MinZ, MaxZ);
-				Log(index + " Dir Changed : " + "(" + curDir.x + "," + curDir.z + ")" + "---->>>----" + "(" + dirX + "," + dirZ + ")" + " BeginPos:" + beginPos.ToString() + " NowPos:" + NextPos.ToString());
-			}
-			if (newRecord.GetTime() > cmdLastRecord.GetTime())
+			if (newRecord.GetTime() > cmdLastRecord.GetTime() || (newRecord.GetTime() == cmdLastRecord.GetTime() && newRecord.GetSpeedType() != SpeedChangeType.None))
 			{
 
 				bool bAdd = true;
 				foreach (var tmp in FutureExeMoves)
 				{
-					if (tmp.GetTime() == newRecord.GetTime())
+					if (tmp.GetTime() == newRecord.GetTime() && tmp.GetSpeedType() == SpeedChangeType.None && newRecord.GetSpeedType() == SpeedChangeType.None)
 					{
 						bAdd = false;
 					}
 				}
-				if (CurMagicRecord.GetTime() == newRecord.GetTime())
+				if (CurMagicRecord != null && CurMagicRecord.GetTime() == newRecord.GetTime() && CurMagicRecord.GetSpeedType() == SpeedChangeType.None && newRecord.GetSpeedType() == SpeedChangeType.None)
 				{
 					bAdd = false;
 				}
 				if (bAdd)
 				{
 					AddFutureExeMoves(newRecord);
+					if(newRecord.GetSpeedType() == SpeedChangeType.SkillUp)
+					{
+						skillupcount++;
+					}
+					else if(newRecord.GetSpeedType() == SpeedChangeType.SkillDown)
+					{
+						skilldowncount++;
+					}
 				}
 				else
 				{
@@ -190,11 +379,20 @@ public class BaseMoveController
 			else
 			{
 				Log("abandon " + newRecord.ToString());
+				if(newRecord.GetSpeedType() != SpeedChangeType.None)
+				{
+					DebugConsole.LogError("SDFEARYTHRTHGFHGDSFSDFSDFSDAF");
+				}
 			}
 
 		}
+		{
+			FixToFuture();
+		}
+		DebugSkillUpDown("After ADD");
 	}
-
+	static int skillupcount = 0;
+	static int skilldowncount = 0;
 	private MagicMoveRecord GetNewRecord()
 	{
 		MagicMoveRecord temp = null;
@@ -318,15 +516,95 @@ public class BaseMoveController
 		{
 			var pmmr = pmmrs[0];
 			pmmrs.RemoveAt(0);
-			CurMagicRecord.SetInitPos(pmmr.PosX, pmmr.PosZ, pmmr.TickTimeMsLong, pmmr.DirX, pmmr.DirZ, pmmr.Speed, pmmr.CMDTime, MinX, MaxX, MinZ, MaxZ);
+			CurMagicRecord.SetInitPos(pmmr.PosX, pmmr.PosZ, pmmr.TickTimeMsLong, pmmr.DirX, pmmr.DirZ, pmmr.Speed, pmmr.CMDTime, MinX, MaxX, MinZ, MaxZ, SpeedChangeType.None, -4);
 		}
 
 		foreach(var pmmr in pmmrs)
 		{
 			var mmr = GetNewRecord();
-			mmr.SetInitPos(pmmr.PosX, pmmr.PosZ, pmmr.TickTimeMsLong, pmmr.DirX, pmmr.DirZ, pmmr.Speed, pmmr.CMDTime, MinX, MaxX, MinZ, MaxZ);
+			mmr.SetInitPos(pmmr.PosX, pmmr.PosZ, pmmr.TickTimeMsLong, pmmr.DirX, pmmr.DirZ, pmmr.Speed, pmmr.CMDTime, MinX, MaxX, MinZ, MaxZ, SpeedChangeType.None, -4);
 			FutureExeMoves.Add(mmr);
 		}
 	}
 
+
+	float CalcSpeed(SpeedChangeType spdType, float nowSpd)
+	{
+		switch (spdType)
+		{
+			case SpeedChangeType.SkillUp:
+				return nowSpd * 2f;
+			case SpeedChangeType.SkillDown:
+				return nowSpd / 2f;
+			case SpeedChangeType.ItemUp:
+				return nowSpd * 8f;
+			case SpeedChangeType.ItemDown:
+				return nowSpd / 8f;
+			case SpeedChangeType.None:
+				return nowSpd;
+			default:
+				DebugConsole.LogError("error spdType:" + spdType);
+				return 0;
+		}
+	}
+
+	public int DebugSkillUpDown(string kaitou, bool log=true)
+	{
+		int u = 0;
+		int d = 0;
+		int u1 = 0;
+		int d1 = 0;
+		int u2 = 0;
+		int d2 = 0;
+		int u3 = 0;
+		int d3 = 0;
+		foreach (var m in NeedFixRecords)
+		{
+			if (m.GetSpeedType() == SpeedChangeType.SkillUp)
+			{
+				u3++;
+			}
+			else if (m.GetSpeedType() == SpeedChangeType.SkillDown)
+			{
+				d3++;
+			}
+		}
+		foreach (var m in HistoryRecords)
+		{
+			if(m.GetSpeedType() == SpeedChangeType.SkillUp)
+			{
+				u1++;
+			}
+			else if(m.GetSpeedType() == SpeedChangeType.SkillDown)
+			{
+				d1++;
+			}
+		}
+
+		if (CurMagicRecord.GetSpeedType() == SpeedChangeType.SkillUp)
+		{
+			u++;
+		}
+		else if (CurMagicRecord.GetSpeedType() == SpeedChangeType.SkillDown)
+		{
+			d++;
+		}
+
+		foreach (var m in FutureExeMoves)
+		{
+			if (m.GetSpeedType() == SpeedChangeType.SkillUp)
+			{
+				u2++;
+			}
+			else if (m.GetSpeedType() == SpeedChangeType.SkillDown)
+			{
+				d2++;
+			}
+		}
+		if(log)
+		{
+			DebugConsole.LogWarning(kaitou + " UPDOWN:History(" + u1 + ":" + d1 + ") " + "Future(" + u2 + ":" + d2 + ") " + "Now(" + u + ":" + d + ") " + "Fix(" + u3 + ":" + d3 + ") " + "Sum(" + (u + u1 + u2 + u3) + ":" + (d + d1 + d2 + d3) + ")");
+		}
+		return (u + u1 + u2 + u3) - (d + d1 + d2 + d3);
+	}
 }
