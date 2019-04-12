@@ -11,6 +11,7 @@ namespace Game.Core
 	/// <summary>
 	/// 这是一个新的复用滚动列表
 	/// </summary>
+	[ExecuteInEditMode]
 	public sealed partial class GameScrollRect_V2 : ScrollRect
 	{
 		/// <summary>
@@ -38,7 +39,10 @@ namespace Game.Core
 			Middle,
 			Lower
 		}
-		
+		[SerializeField]
+		public RectTransform.Edge FirstEdge;
+		[SerializeField]
+		public RectTransform.Edge SecondEdge;
 		//生成的列表的布局方式
 		[SerializeField]
 		public LayoutType LayoutMode = LayoutType.Grid;
@@ -78,10 +82,10 @@ namespace Game.Core
 
 		//运行时列表的行数
 		[NonSerialized]
-		private Int32 RowCount = 1;
+		public Int32 RowCount = 1;
 		//运行时列表的列数
 		[NonSerialized]
-		private Int32 ColumnCount = 1;
+		public Int32 ColumnCount = 1;
 		[NonSerialized]
 		private Boolean IsDPsChanged = false;//DataAndPosProviders列表是否有变化
 		[NonSerialized]
@@ -213,7 +217,7 @@ namespace Game.Core
 			if (EmptyRoot == null)
 			{
 				GameObject empty = new GameObject("EmptyRecycle");
-				empty.transform.SetParent(viewport);
+				empty.transform.SetParent(viewport?? this.transform);
 				RectTransform emptyrect = empty.AddComponent<RectTransform>();
 				emptyrect.sizeDelta = new Vector2(0f, 0f);
 				emptyrect.localScale = Vector3.one;
@@ -377,7 +381,7 @@ namespace Game.Core
 				return Vector2.negativeInfinity;
 			}
 			RefreshContentSize();
-			return DataAndPosProviders[index].RectPos.position;
+			return DataAndPosProviders[index].Rect.position;
 		}
 		/// <summary>
 		/// 获得某个item的位置
@@ -396,7 +400,7 @@ namespace Game.Core
 					dp = DataAndPosProviders[i];
 					if (dp.VisableGO == go)
 					{
-						ret = dp.RectPos.position;
+						ret = dp.Rect.position;
 						return true;
 					}
 				}
@@ -421,7 +425,7 @@ namespace Game.Core
 					dp = DataAndPosProviders[i];
 					if (dp.Data == data)
 					{
-						ret = dp.RectPos.position;
+						ret = dp.Rect.position;
 						return true;
 					}
 				}
@@ -539,6 +543,12 @@ namespace Game.Core
 			}
 		}
 		#endregion
+#if UNITY_EDITOR
+		public void ForceRefresh()
+		{
+			SetDPsChanged();
+		}
+#endif
 		private void SetDPsChanged()
 		{
 			IsDPsChanged = true;

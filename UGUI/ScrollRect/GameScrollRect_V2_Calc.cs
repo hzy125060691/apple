@@ -17,7 +17,7 @@ namespace Game.Core
 		/// 保存了对应位置的数据与坐标位置
 		/// 用来判断是否需要显示item
 		/// </summary>
-		private class DataPos
+		public class DataPos
 		{
 			//本数据在列表中的位置
 			public Int32 Index;
@@ -25,10 +25,11 @@ namespace Game.Core
 			public System.Object Data;
 			//如果在视野范围内就指向对应的GO
 			public GameObject VisableGO;
-			//对内用来判断相交的Rect
-			private Rect RectOverlap;
-			//对外用来显示位置的Rect，与上边那个不一样，差一个Rect的高度
-			public Rect RectPos { get; private set; }
+			public RectTransform.Edge FirstEdge = RectTransform.Edge.Left;
+			public RectTransform.Edge SecondEdge = RectTransform.Edge.Top;
+			//位置与大小
+			public Rect Rect { get; private set; }
+			public Rect RectReal;
 			/// <summary>
 			/// 设置进入视野的GO的Transform信息
 			/// </summary>
@@ -38,33 +39,71 @@ namespace Game.Core
 				if (vGO == null) return;
 				VisableGO = vGO;
 				var rectT = VisableGO.transform as RectTransform;
-				rectT.pivot = rectT.anchorMin = rectT.anchorMax = new Vector2(0, 1);
+				//rectT.pivot = rectT.anchorMin = rectT.anchorMax = new Vector2(0, 1);
 				rectT.localScale = Vector3.one;
 				rectT.localEulerAngles = Vector3.zero;
 				//VisableGO.name = Index.ToString();
 				rectT.anchoredPosition3D = Vector3.zero;
-				rectT.anchoredPosition = RectPos.position;
+				//rectT.anchoredPosition = RectPos.position;
+				rectT.SetInsetAndSizeFromParentEdge(RectTransform.Edge.Left, Rect.position.x, Rect.width);
+				rectT.SetInsetAndSizeFromParentEdge(RectTransform.Edge.Bottom, Rect.position.y, Rect.height);
 			}
 			/// <summary>
-			/// 设置自己的两个Rect
+			/// 设置自己的Rect
 			/// </summary>
 			/// <param name="rect"></param>
 			/// <param name="lt"></param>
-			public void SetRect(Rect rect, LayoutType lt)
+			public void SetRect(Rect rect)
 			{
-				switch (lt)
+				Rect = rect;
+				RectReal = rect;
+			}
+			public void RefreshRealRect(Vector2 contentSize, RectTransform.Edge firstDir, RectTransform.Edge secondDir)
+			{
+// 				switch (firstDir)
+// 				{
+// 					case RectTransform.Edge.Left:
+// 						break;
+// 					case RectTransform.Edge.Right:
+// 						RectReal.x = contentSize.x - Rect.width - Rect.x;
+// 						break;
+// 					default:
+// 						Debug.LogError("RefreshRealRec hEdge Error:" + firstDir);
+// 						break;
+// 				}
+// 				switch (secondDir)
+// 				{
+// 					case RectTransform.Edge.Top:
+// 						RectReal.y = -Rect.height - Rect.y;
+// 						break;
+// 					case RectTransform.Edge.Bottom:
+// 						RectReal.y = Rect.height + Rect.y - contentSize.y;
+// 						break;
+// 					default:
+// 						Debug.LogError("RefreshRealRec vEdge Error:" + secondDir);
+// 						break;
+// 				}
+
+				switch (firstDir)
 				{
-					case LayoutType.Grid:
-						RectOverlap = new Rect(rect.x, rect.y - rect.height, rect.width, rect.height);
+					case RectTransform.Edge.Right:
+						if(secondDir == RectTransform.Edge.Bottom)
+						{
+							FirstEdge = RectTransform.Edge.Left;
+							SecondEdge = RectTransform.Edge.Top;
+						}
+						else if(secondDir == RectTransform.Edge.Top)
+						{
+							FirstEdge = RectTransform.Edge.Left;
+							SecondEdge = RectTransform.Edge.Bottom;
+						}
 						break;
-					case LayoutType.Horizontal:
-						RectOverlap = new Rect(rect.x, rect.y - rect.height, rect.width, rect.height);
+					case RectTransform.Edge.Left:
 						break;
-					case LayoutType.Vertical:
-						RectOverlap = new Rect(rect.x, rect.y - rect.height, rect.width, rect.height);
+					case RectTransform.Edge.Bottom:
+					case RectTransform.Edge.Top:
 						break;
 				}
-				RectPos = rect;
 			}
 			/// <summary>
 			/// 判断是否相交
@@ -73,7 +112,7 @@ namespace Game.Core
 			/// <returns></returns>
 			public Boolean Overlaps(DataPos otherData)
 			{
-				return RectOverlap.Overlaps(otherData.RectOverlap);
+				return RectReal.Overlaps(otherData.RectReal);
 			}
 			/// <summary>
 			/// 判断是否相交
@@ -82,16 +121,16 @@ namespace Game.Core
 			/// <returns></returns>
 			public Boolean Overlaps(Rect otherRect)
 			{
-				return RectOverlap.Overlaps(otherRect);
+				return RectReal.Overlaps(otherRect);
 			}
 			public override String ToString()
 			{
-				return String.Format("index:{0},x:{1},y:{2},w:{3},h:{4}\n realPos:{5}", Index, RectOverlap.x, RectOverlap.y, RectOverlap.width, RectOverlap.height, RectPos);
+				return String.Format("index:{0},x:{1},y:{2},w:{3},h:{4}\n real:{5}", Index, Rect.x, Rect.y, Rect.width, Rect.height, RectReal);
 			}
 		}
 
-		private float GetGridBlockSizeY() { return CellSize.y + SpacingSize.y; }
-		private float GetGridBlockSizeX() { return CellSize.x + SpacingSize.x; }
+		private float GetGridBlockSizeY(Boolean isMarginal) { return CellSize.y + (isMarginal ? 0: SpacingSize.y); }
+		private float GetGridBlockSizeX(Boolean isMarginal) { return CellSize.x + (isMarginal ? 0 : SpacingSize.x); }
 		private Vector2 GetGridBlockSize() { return CellSize + SpacingSize; }
 
 		/// <summary>
@@ -101,13 +140,14 @@ namespace Game.Core
 		/// <param name="column"></param>
 		/// <param name="row"></param>
 		/// <param name="lastItemRect"></param>
+		/// <param name="isFirst"></param>
 		/// <returns></returns>
-		private Rect GetBlockRect(DataPos dp, Int32 column, Int32 row, Rect lastItemRect)
+		private Rect GetBlockRect(DataPos dp, Int32 column, Int32 row, Rect lastItemRect, Boolean isFirst, RectTransform.Edge dir)
 		{
 			switch (LayoutMode)
 			{
 				case LayoutType.Grid:
-					return new Rect(column * GetGridBlockSizeX(), -row * GetGridBlockSizeY(), CellSize.x, CellSize.y);
+					return new Rect(GetGridBlockSizeX(false) * column, GetGridBlockSizeY(false) * row, CellSize.x, CellSize.y);
 				case LayoutType.Horizontal:
 				case LayoutType.Vertical:
 					var size = Vector2.zero;
@@ -119,11 +159,10 @@ namespace Game.Core
 					{
 						size = (ChildItem.transform as RectTransform).sizeDelta;
 					}
-					size += SpacingSize;
 					return new Rect(LayoutMode == LayoutType.Horizontal ?
-									(lastItemRect.position + new Vector2(lastItemRect.width, 0))
+									(lastItemRect.position + new Vector2(lastItemRect.width + (isFirst ? 0: SpacingSize.x), 0))
 									:
-									(lastItemRect.position + new Vector2(0, -lastItemRect.height))
+									(lastItemRect.position + new Vector2(0, lastItemRect.height + (isFirst ? 0 : SpacingSize.y)))
 									, size);
 			}
 			return Rect.zero;
@@ -137,32 +176,66 @@ namespace Game.Core
 			{
 				return;
 			}
+			var vp = viewport;
 			IsDPsChanged = false;
 			IsMoveDirty = true;
 			if (DataAndPosProviders == null)
 			{
 				return;
 			}
-			var size = Vector2.zero;
+			switch(LayoutMode)
+			{
+				case LayoutType.Grid:
+					if (FirstEdge == RectTransform.Edge.Bottom || FirstEdge == RectTransform.Edge.Top)
+					{
+						if (SecondEdge == RectTransform.Edge.Bottom || SecondEdge == RectTransform.Edge.Top)
+						{
+
+							Debug.LogError(String.Format("Order Dir ({0})--->({1}) Error", FirstEdge, SecondEdge));
+							return;
+						}
+					}
+					else
+					{
+						if (SecondEdge == RectTransform.Edge.Left || SecondEdge == RectTransform.Edge.Right)
+						{
+
+							Debug.LogError(String.Format("Order Dir ({0})--->({1}) Error", FirstEdge, SecondEdge));
+							return;
+						}
+					}
+					break;
+				case LayoutType.Vertical:
+					if (FirstEdge == RectTransform.Edge.Left || FirstEdge == RectTransform.Edge.Right)
+					{
+						Debug.LogError(String.Format("Order Dir {0} Error", FirstEdge));
+						return;
+					}
+					break;
+				case LayoutType.Horizontal:
+					if (FirstEdge == RectTransform.Edge.Top || FirstEdge == RectTransform.Edge.Bottom)
+					{
+						Debug.LogError(String.Format("Order Dir {0} Error", FirstEdge));
+						return;
+					}
+					break;
+			}
+			
 			var dataCount = DataAndPosProviders.Count;
+			RowCount = 1;
+			ColumnCount = 1;
+			//求行数与列数
 			if (dataCount > 0)
 			{
 				switch (LayoutMode)
 				{
 					case LayoutType.Grid:
-						/// 如果要使用grid模式，理论上不允许size小于等于0，所以会自动设置到0.01f上
-						CellSize = new Vector2(Mathf.Max(CellSize.x, 0.01f), Mathf.Max(CellSize.y, 0.01f));
-						var cellSize = GetGridBlockSize();
-						RowCount = 1;
-						ColumnCount = 1;
 						switch (GridConstraint)
 						{
 							case GridLayoutGroup.Constraint.Flexible:
 								//优先排满一行
-								var vp = viewport;
-								ColumnCount = Mathf.Max(Mathf.FloorToInt(vp.rect.width / cellSize.x), 1);
+								ColumnCount = Mathf.Max(Mathf.FloorToInt(vp.rect.width / GetGridBlockSizeX(false)), 1);
 								RowCount = Mathf.Max(Mathf.CeilToInt((Single)dataCount / ColumnCount), 1);
-								var tmp = dataCount * cellSize;
 								break;
 							case GridLayoutGroup.Constraint.FixedColumnCount:
 								ColumnCount = Mathf.Max(ConstraintCount, 1);
@@ -176,60 +249,199 @@ namespace Game.Core
 								Debug.LogError("InitScrollRect Error GridConstraint:" + GridConstraint);
 								break;
 						}
-						size = new Vector2(cellSize.x * ColumnCount, cellSize.y * RowCount);
+						break;
+					case LayoutType.Horizontal:
+						ColumnCount = dataCount;
+						RowCount = 1;
 						break;
 					case LayoutType.Vertical:
-					case LayoutType.Horizontal:
-						//水平和竖直布局就很随意了，按照item自己的size进行计算
-						//如果有通过data计算CalcSizeAction方法就使用它进行计算
-						var tmpMax = Vector2.zero;
-						var tmpAll = Vector2.zero;
-						if (CalcSizeAction != null)
-						{
-							var tmp = Vector2.zero;
-							foreach (var data in DataAndPosProviders)
-							{
-								tmp = CalcSizeAction.Invoke(data.Data) + SpacingSize;
-								tmpAll += new Vector2(tmp.x, tmp.y);
-								tmpMax = new Vector2(Mathf.Max(tmpMax.x, tmp.x), Mathf.Max(tmpMax.y, tmp.y));
-							}
-						}
-						else if (ChildItem != null)
-						{
-							var rectT = ChildItem.transform as RectTransform;
-							tmpAll = new Vector2(dataCount * rectT.rect.width, dataCount * rectT.rect.height) + SpacingSize;
-							tmpMax = new Vector2(rectT.rect.width, rectT.rect.height) + SpacingSize;
-						}
-						else
-						{
-							Debug.LogError("Error CalcSizeAction is null, and  Childitem is null too");
-						}
-						size = LayoutMode == LayoutType.Vertical ? new Vector2(tmpMax.x, tmpAll.y) : new Vector2(tmpAll.x, tmpMax.y);
-						ColumnCount = LayoutMode == LayoutType.Vertical ? dataCount : 1;
-						RowCount = LayoutMode == LayoutType.Vertical ? 1 : dataCount;
+						ColumnCount = 1;
+						RowCount = dataCount;
 						break;
 					default:
 						Debug.LogError("InitScrollRect LayoutMode:" + LayoutMode);
 						break;
 				}
 			}
+
 			//Debug.LogError("Content size:" + size);
-			var ct = this.content;
-			ct.sizeDelta = size;
-			var row = 1;
-			var column = 1;
+			//行数列数已经确定，下面该设置每个item的位置和大小了
+			var row = 0;
+			var column = 0;
 			DataPos tmpDP = null;
 			var lastRect = Rect.zero;
-			for (int i = 0; i < dataCount; ++i)
+			var isFirst = true;
+			if((LayoutMode == LayoutType.Horizontal && FirstEdge == RectTransform.Edge.Left) ||
+				(LayoutMode == LayoutType.Vertical && FirstEdge == RectTransform.Edge.Bottom))
 			{
-				tmpDP = DataAndPosProviders[i];
-				row = i / ColumnCount;
-				column = i % ColumnCount;
-				tmpDP.Index = i;
-				var tmpRect = GetBlockRect(tmpDP, column, row, lastRect);
-				tmpDP.SetRect(tmpRect, LayoutMode);
-				lastRect = tmpRect;
-				//Debug.LogError("data :" + i + " , " + tmpDP.ToString() + "," +tmpDP.Data.ToString());
+				for (var i = dataCount - 1; i >= 0; --i)
+				{
+					tmpDP = DataAndPosProviders[i];
+					GetRowAndCol(i, RowCount, ColumnCount, LayoutMode, FirstEdge, SecondEdge, out row, out column);
+					tmpDP.Index = i;
+					var tmpRect = GetBlockRect(tmpDP, column, row, lastRect, isFirst, FirstEdge);
+					isFirst = false;
+					tmpDP.SetRect(tmpRect);
+					lastRect = tmpRect;
+					//Debug.LogError("data :" + i + " , " + tmpDP.ToString() + "," +tmpDP.Data.ToString());
+				}
+			}
+			else
+			{
+				for (var i = 0; i < dataCount; ++i)
+				{
+					tmpDP = DataAndPosProviders[i];
+					GetRowAndCol(i, RowCount, ColumnCount, LayoutMode, FirstEdge, SecondEdge, out row, out column);
+					tmpDP.Index = i;
+					var tmpRect = GetBlockRect(tmpDP, column, row, lastRect, isFirst, FirstEdge);
+					isFirst = false;
+					tmpDP.SetRect(tmpRect);
+					lastRect = tmpRect;
+					//Debug.LogError("data :" + i + " , " + tmpDP.ToString() + "," +tmpDP.Data.ToString());
+				}
+			}
+
+			var size = Vector2.zero;
+			var tmpVec2 = Vector2.zero;
+			//这里需要上边遍历后的结果，所以拆成两部分了
+			if (dataCount > 0)
+			{
+				switch (LayoutMode)
+				{
+					case LayoutType.Grid:
+						// 如果要使用grid模式，理论上不允许size小于等于0，所以会自动设置到0.01f上
+						CellSize = new Vector2(Mathf.Max(CellSize.x, 0.01f), Mathf.Max(CellSize.y, 0.01f));
+						size.x = GetGridBlockSizeX(true) + GetGridBlockSizeX(false) * Mathf.Max(0, (ColumnCount - 1));
+						size.y = GetGridBlockSizeY(true) + GetGridBlockSizeY(false) * Mathf.Max(0, (RowCount - 1));
+						break;
+					case LayoutType.Horizontal:
+					case LayoutType.Vertical:
+						//水平和竖直布局就很随意了，按照item自己的size进行计算
+						//如果有通过data计算CalcSizeAction方法就使用它进行计算
+						var tmpMax = Vector2.zero;
+						var tmpAll = Vector2.zero;
+						if (CalcSizeAction != null)
+						{
+							tmpVec2 = Vector2.zero;
+							for (int i = 0; i < dataCount; ++i)
+							{
+								tmpDP = DataAndPosProviders[i];
+								//GetRowAndCol(i, RowCount, ColumnCount, LayoutMode, FirstEdge, SecondEdge, out row, out column);
+// 								row = i / ColumnCount;
+// 								column = i % ColumnCount;
+								tmpVec2 = tmpDP.Rect.size + new Vector2((i == 0)?0: SpacingSize.x, (i == 0) ? 0 : SpacingSize.y);
+								tmpAll += tmpVec2;
+								tmpMax = new Vector2(Mathf.Max(tmpMax.x, tmpVec2.x), Mathf.Max(tmpMax.y, tmpVec2.y));
+							}
+							size = LayoutMode == LayoutType.Vertical ? new Vector2(tmpMax.x, tmpAll.y) : new Vector2(tmpAll.x, tmpMax.y);
+						}
+						else if (ChildItem != null)
+						{
+							tmpVec2 = (ChildItem.transform as RectTransform).rect.size;
+							size.x = tmpVec2.x + (tmpVec2.x + SpacingSize.x) * Mathf.Max(0, (ColumnCount - 1));
+							size.y = tmpVec2.y + (tmpVec2.y + SpacingSize.y) * Mathf.Max(0, (RowCount - 1));
+						}
+						else
+						{
+							Debug.LogError("Error CalcSizeAction is null, and  Childitem is null too");
+						}
+						break;
+				}
+			}
+			var ct = this.content;
+			ct.sizeDelta = size;
+			//所有数据都设置好了，也得到了真正的size，下一步就是设置每个item真正的位置了
+			for (var i = 0; i < dataCount; ++i)
+			{
+				DataAndPosProviders[i].RefreshRealRect(size, FirstEdge, SecondEdge);
+			}
+			
+		}
+		public static void GetRowAndCol(Int32 idx, Int32 rowCount, Int32 colCount, LayoutType layoutMode, RectTransform.Edge firstEdge, RectTransform.Edge secondEdge, out Int32 row, out Int32 col)
+		{
+			row = 0;
+			col = 0;
+			switch(layoutMode)
+			{
+				case LayoutType.Grid:
+					{
+						#region Gird下求行列
+						switch (firstEdge)
+						{
+							case RectTransform.Edge.Left:
+								if (secondEdge == RectTransform.Edge.Bottom)
+								{
+									row = rowCount - 1 - idx / colCount;
+									col = colCount - 1 - idx % colCount;
+								}
+								else if (secondEdge == RectTransform.Edge.Top)
+								{
+									row = idx / colCount;
+									col = colCount - 1 - idx % colCount;
+								}
+								break;
+							case RectTransform.Edge.Right:
+								if (secondEdge == RectTransform.Edge.Bottom)
+								{
+									row = rowCount - 1 - idx / colCount;
+									col = idx % colCount;
+								}
+								else if (secondEdge == RectTransform.Edge.Top)
+								{
+									row = idx / colCount;
+									col = idx % colCount;
+								}
+								break;
+							case RectTransform.Edge.Top:
+								if (secondEdge == RectTransform.Edge.Left)
+								{
+									col = colCount - 1 - idx / rowCount;
+									row = idx % rowCount;
+								}
+								else if (secondEdge == RectTransform.Edge.Right)
+								{
+									col = idx / rowCount;
+									row = idx % rowCount;
+								}
+								break;
+							case RectTransform.Edge.Bottom:
+								if (secondEdge == RectTransform.Edge.Left)
+								{
+									col = colCount - 1 - idx / rowCount;
+									row = rowCount - 1 - idx % rowCount;
+								}
+								else if (secondEdge == RectTransform.Edge.Right)
+								{
+									col = idx / rowCount;
+									row = rowCount - 1 - idx % rowCount;
+								}
+								break;
+						}
+						#endregion
+					}
+					break;
+				case LayoutType.Horizontal:
+					row = 0;
+					if(firstEdge == RectTransform.Edge.Left)
+					{
+						col = colCount - 1 - idx;
+					}
+					else
+					{
+						col = idx;
+					}
+					break;
+				case LayoutType.Vertical:
+					col = 0;
+					if (firstEdge == RectTransform.Edge.Top)
+					{
+						row = idx;
+					}
+					else
+					{
+						row = rowCount - 1 - idx;
+					}
+					break;
 			}
 		}
 		/// <summary>
@@ -253,7 +465,9 @@ namespace Game.Core
 			var ctAnchoredPos = ctParentTopLeft2Anchored + ctPivot2TopLeftOffset + content.anchoredPosition;
 
 			//Debug.LogError("PIVOT：" + (content.pivot * viewSize).ToString() + ",pos:" + content.anchoredPosition );
-			Rect viewRect = new Rect(-ctAnchoredPos.x + ViewSizeMinExt.x, -viewSize.y - ctAnchoredPos.y + ViewSizeMinExt.y, viewSize.x - ViewSizeMinExt.x + ViewSizeMaxExt.x, viewSize.y - ViewSizeMinExt.y + ViewSizeMaxExt.y);
+			Rect viewRect = new Rect(-ctAnchoredPos.x - ViewSizeMinExt.x, -viewSize.y - ctAnchoredPos.y - ViewSizeMinExt.y, viewSize.x + ViewSizeMinExt.x + ViewSizeMaxExt.x, viewSize.y + ViewSizeMinExt.y + ViewSizeMaxExt.y);
+			Debug.LogError(viewRect);
+			Debug.LogError(viewport.rect);
 			foreach (var dp in DataAndPosProviders)
 			{
 				if (dp.Overlaps(viewRect))
@@ -347,17 +561,17 @@ namespace Game.Core
 			Vector2 alignOffset = Vector2.zero;
 			if (vertical)
 			{
-				tarPos.y = -tarDP.RectPos.position.y;
+				tarPos.y = -tarDP.Rect.position.y;
 				switch (vAlignment)
 				{
 					case VerticalAlignType.None:
 					case VerticalAlignType.Upper:
 						break;
 					case VerticalAlignType.Lower:
-						alignOffset.y = (tarDP.RectPos.size.y - vt.rect.size.y);
+						alignOffset.y = (tarDP.Rect.size.y - vt.rect.size.y);
 						break;
 					case VerticalAlignType.Middle:
-						alignOffset.y = (tarDP.RectPos.size.y - vt.rect.size.y) * 0.5f;
+						alignOffset.y = (tarDP.Rect.size.y - vt.rect.size.y) * 0.5f;
 						break;
 					default:
 						throw new NotImplementedException("VerticalAlignType:" + vAlignment + " not Implemented");
@@ -365,17 +579,17 @@ namespace Game.Core
 			}
 			if (horizontal)
 			{
-				tarPos.x = -tarDP.RectPos.position.x;
+				tarPos.x = -tarDP.Rect.position.x;
 				switch (hAlignment)
 				{
 					case HorizontalAlignType.None:
 					case HorizontalAlignType.Left:
 						break;
 					case HorizontalAlignType.Right:
-						alignOffset.x = (vt.rect.size.x - tarDP.RectPos.size.x);
+						alignOffset.x = (vt.rect.size.x - tarDP.Rect.size.x);
 						break;
 					case HorizontalAlignType.Center:
-						alignOffset.x = (vt.rect.size.x - tarDP.RectPos.size.x) * 0.5f;
+						alignOffset.x = (vt.rect.size.x - tarDP.Rect.size.x) * 0.5f;
 						break;
 					default:
 						throw new NotImplementedException("HorizontalAlignType:" + hAlignment + " not Implemented");

@@ -6,6 +6,8 @@ using Game.Core;
 using System;
 using System.Linq;
 using System.Reflection;
+using UnityEditorInternal;
+using System.Collections.Generic;
 
 [CustomEditor(typeof(GameScrollRect_V2), true)]
 [CanEditMultipleObjects]
@@ -15,6 +17,8 @@ class GameScrollRect_V2_Editor : ScrollRectEditor
 	private GUIStyle warningTextSytle = null;//大红色字体，醒目
 	private SerializedProperty EmptyRoot_SP = null;
 	private SerializedProperty RealChildItem_SP = null;
+	private SerializedProperty FirstEdge_SP = null;
+	private SerializedProperty SecondEdge_SP = null;
 	private SerializedProperty LayoutMode_SP = null;
 	private SerializedProperty GridConstraint_SP = null;
 	private SerializedProperty ConstraintCount_SP = null;
@@ -25,9 +29,21 @@ class GameScrollRect_V2_Editor : ScrollRectEditor
 
 	private GameScrollRect_V2 SelfObj = null;
 	private MonoScript Script= null;
+
+	private Boolean ShowEditorProperty = false;
+	//private ReorderableList EditorTestGOs;
 	//private String ScriptPath = null;
 	protected override void OnEnable()
 	{
+// 		var tarGSR = serializedObject.targetObject as GameScrollRect_V2;
+// 		var t = typeof(GameScrollRect_V2);
+// 		var tmp = t.GetField("DataAndPosProviders", BindingFlags.NonPublic | BindingFlags.Instance);
+// 		var list = tmp.GetValue(tarGSR) as System.Collections.IList;
+// 		EditorTestGOs = new ReorderableList(list, typeof(System.Object));
+// 		EditorTestGOs.onAddCallback = (l) => { Debug.LogError("add"); list.Add(new GameScrollRect_V2.DataPos()); };
+// 		EditorTestGOs.onRemoveCallback = (l) => { Debug.LogError("remove"); list.RemoveAt(list.Count -1); };
+
+
 		if (textSytle == null)
 		{
 			//大红色字体，醒目
@@ -51,6 +67,8 @@ class GameScrollRect_V2_Editor : ScrollRectEditor
 		SelfObj = target as GameScrollRect_V2;
 		EmptyRoot_SP = serializedObject.FindProperty("EmptyRoot");
 		RealChildItem_SP = serializedObject.FindProperty("ChildItem");
+		FirstEdge_SP = serializedObject.FindProperty("FirstEdge");
+		SecondEdge_SP = serializedObject.FindProperty("SecondEdge");
 		LayoutMode_SP = serializedObject.FindProperty("LayoutMode");
 		GridConstraint_SP = serializedObject.FindProperty("GridConstraint");
 		ConstraintCount_SP = serializedObject.FindProperty("ConstraintCount");
@@ -100,7 +118,16 @@ class GameScrollRect_V2_Editor : ScrollRectEditor
 
 	}
 	#endregion
-
+	public enum GSREditor_Edge_V
+	{
+		Top = 0,
+		Bottom = 1
+	}
+	public enum GSREditor_Edge_H
+	{
+		Left = 0,
+		Right = 1,
+	}
 	public override void OnInspectorGUI()
 	{
 		if (Script != null)
@@ -119,6 +146,18 @@ class GameScrollRect_V2_Editor : ScrollRectEditor
 				EditorGUILayout.LabelField(content, textSytle, GUILayout.Height(height));
 			}
 		}
+		++EditorGUI.indentLevel;
+		if (!ShowEditorProperty)
+		{
+			ShowEditorProperty = GUILayout.Button( "打开Editor测试选项" );
+		}
+		else
+		{
+			ShowEditorProperty = !GUILayout.Button("关闭Editor测试选项");
+			EditorGUILayout.LabelField("随便显示点东西");
+			//EditorTestGOs.DoLayoutList();
+		}
+		--EditorGUI.indentLevel;
 		EditorGUILayout.LabelField("扩展属性如下：");
 		++EditorGUI.indentLevel;
 		serializedObject.UpdateIfRequiredOrScript();
@@ -126,20 +165,150 @@ class GameScrollRect_V2_Editor : ScrollRectEditor
 
 		EditorGUILayout.PropertyField(RealChildItem_SP);
 		EditorGUILayout.PropertyField(ViewSizeMinExt_SP);
+		{
+			ViewSizeMinExt_SP.vector2Value = new Vector2(Mathf.Max(ViewSizeMinExt_SP.vector2Value.x, 0), Mathf.Max(ViewSizeMinExt_SP.vector2Value.y, 0));
+		}
 		EditorGUILayout.PropertyField(ViewSizeMaxExt_SP);
+		{
+			ViewSizeMaxExt_SP.vector2Value = new Vector2(Mathf.Max(ViewSizeMaxExt_SP.vector2Value.x, 0), Mathf.Max(ViewSizeMaxExt_SP.vector2Value.y, 0));
+		}
 		//EditorGUILayout.PropertyField(ViewSizeExt_SP);
 		{
 			EditorGUILayout.PropertyField(LayoutMode_SP);
-			if(GameScrollRect_V2.LayoutType.Grid== (GameScrollRect_V2.LayoutType)Enum.GetValues(typeof(GameScrollRect_V2.LayoutType)).GetValue(LayoutMode_SP.enumValueIndex))
+			var layoutMode = (GameScrollRect_V2.LayoutType)Enum.GetValues(typeof(GameScrollRect_V2.LayoutType)).GetValue(LayoutMode_SP.enumValueIndex);
+			if (GameScrollRect_V2.LayoutType.Grid == layoutMode)
 			{
 				EditorGUILayout.PropertyField(GridConstraint_SP);
-				EditorGUILayout.PropertyField(ConstraintCount_SP);
+				if(GridLayoutGroup.Constraint.Flexible != (GridLayoutGroup.Constraint)Enum.GetValues(typeof(GridLayoutGroup.Constraint)).GetValue(GridConstraint_SP.enumValueIndex))
+				{
+					EditorGUILayout.PropertyField(ConstraintCount_SP);
+				}
 				EditorGUILayout.PropertyField(CellSize_SP);
+				#region 排序方向
+				{
+					EditorGUILayout.BeginHorizontal();
+					EditorGUILayout.PropertyField(FirstEdge_SP, new GUIContent("排序方向"));
+					var edges = Enum.GetValues(typeof(RectTransform.Edge));
+					var firstEdge = (RectTransform.Edge)edges.GetValue(FirstEdge_SP.enumValueIndex);
+					var secondEdge = (RectTransform.Edge)edges.GetValue(SecondEdge_SP.enumValueIndex);
+					if (firstEdge == RectTransform.Edge.Left || firstEdge == RectTransform.Edge.Right)
+					{
+						if (secondEdge == RectTransform.Edge.Left || secondEdge == RectTransform.Edge.Right)
+						{
+							for (var i = 0; i < edges.Length; i++)
+							{
+								if ((RectTransform.Edge)edges.GetValue(i) == RectTransform.Edge.Top && SecondEdge_SP.enumValueIndex != i)
+								{
+									SecondEdge_SP.enumValueIndex = i;
+									break;
+								}
+							}
+						}
+						var eV = secondEdge == RectTransform.Edge.Bottom ? GSREditor_Edge_V.Bottom : GSREditor_Edge_V.Top;
+						eV = (GSREditor_Edge_V)EditorGUILayout.EnumPopup(eV);
+						var tar = eV == GSREditor_Edge_V.Top ? RectTransform.Edge.Top : RectTransform.Edge.Bottom;
+						for (var i = 0; i < edges.Length; i++)
+						{
+							if ((RectTransform.Edge)edges.GetValue(i) == tar && SecondEdge_SP.enumValueIndex != i)
+							{
+								SecondEdge_SP.enumValueIndex = i;
+								break;
+							}
+						}
+					}
+					else
+					{
+						if (secondEdge == RectTransform.Edge.Top || secondEdge == RectTransform.Edge.Bottom)
+						{
+							for (var i = 0; i < edges.Length; i++)
+							{
+								if ((RectTransform.Edge)edges.GetValue(i) == RectTransform.Edge.Left && SecondEdge_SP.enumValueIndex != i)
+								{
+									SecondEdge_SP.enumValueIndex = i;
+									break;
+								}
+							}
+						}
+						var eH = secondEdge == RectTransform.Edge.Left ? GSREditor_Edge_H.Left : GSREditor_Edge_H.Right;
+						eH = (GSREditor_Edge_H)EditorGUILayout.EnumPopup(eH);
+						var tar = eH == GSREditor_Edge_H.Left ? RectTransform.Edge.Left : RectTransform.Edge.Right;
+						for (var i = 0; i < edges.Length; i++)
+						{
+							if ((RectTransform.Edge)edges.GetValue(i) == tar && SecondEdge_SP.enumValueIndex != i)
+							{
+								SecondEdge_SP.enumValueIndex = i;
+								break;
+							}
+						}
+					}
+					EditorGUILayout.EndHorizontal();
+				}
+				#endregion
+			}
+			else if(layoutMode == GameScrollRect_V2.LayoutType.Vertical)
+			{
+				#region 排序方向
+				var edges = Enum.GetValues(typeof(RectTransform.Edge));
+				var firstEdge = (RectTransform.Edge)edges.GetValue(FirstEdge_SP.enumValueIndex);
+				if(firstEdge != RectTransform.Edge.Top && firstEdge != RectTransform.Edge.Bottom)
+				{
+					for (var i = 0; i < edges.Length; i++)
+					{
+						if ((RectTransform.Edge)edges.GetValue(i) == RectTransform.Edge.Top && FirstEdge_SP.enumValueIndex != i)
+						{
+							FirstEdge_SP.enumValueIndex = i;
+							break;
+						}
+					}
+				}
+				var eV = firstEdge == RectTransform.Edge.Bottom ? GSREditor_Edge_V.Bottom : GSREditor_Edge_V.Top;
+				eV = (GSREditor_Edge_V)EditorGUILayout.EnumPopup(new GUIContent("排序方向"), eV);
+				var tar = eV == GSREditor_Edge_V.Top ? RectTransform.Edge.Top : RectTransform.Edge.Bottom;
+				for (var i = 0; i < edges.Length; i++)
+				{
+					if ((RectTransform.Edge)edges.GetValue(i) == tar && FirstEdge_SP.enumValueIndex != i)
+					{
+						FirstEdge_SP.enumValueIndex = i;
+						break;
+					}
+				}
+				#endregion
+			}
+			else if (layoutMode == GameScrollRect_V2.LayoutType.Horizontal)
+			{
+				#region 排序方向
+				var edges = Enum.GetValues(typeof(RectTransform.Edge));
+				var firstEdge = (RectTransform.Edge)edges.GetValue(FirstEdge_SP.enumValueIndex);
+				if (firstEdge != RectTransform.Edge.Left && firstEdge != RectTransform.Edge.Right)
+				{
+					for (var i = 0; i < edges.Length; i++)
+					{
+						if ((RectTransform.Edge)edges.GetValue(i) == RectTransform.Edge.Right && FirstEdge_SP.enumValueIndex != i)
+						{
+							FirstEdge_SP.enumValueIndex = i;
+							break;
+						}
+					}
+				}
+				var eH = firstEdge == RectTransform.Edge.Right ? GSREditor_Edge_H.Right : GSREditor_Edge_H.Left;
+				eH = (GSREditor_Edge_H)EditorGUILayout.EnumPopup(new GUIContent("排序方向"), eH);
+				var tar = eH == GSREditor_Edge_H.Right ? RectTransform.Edge.Right : RectTransform.Edge.Left;
+				for (var i = 0; i < edges.Length; i++)
+				{
+					if ((RectTransform.Edge)edges.GetValue(i) == tar && FirstEdge_SP.enumValueIndex != i)
+					{
+						FirstEdge_SP.enumValueIndex = i;
+						break;
+					}
+				}
+				#endregion
 			}
 			EditorGUILayout.PropertyField(SpacingSize_SP);
 		}
-
-		serializedObject.ApplyModifiedProperties();
+		if (serializedObject.ApplyModifiedProperties())
+		{
+			(serializedObject.targetObject as GameScrollRect_V2).ForceRefresh();
+		}
 		--EditorGUI.indentLevel;
 
 		//SerializedProperty childItem = serializedObject.FindProperty("ChildItem");
@@ -150,7 +319,7 @@ class GameScrollRect_V2_Editor : ScrollRectEditor
 		//EditorGUILayout.PropertyField(childItem);
 		serializedObject.ApplyModifiedProperties();
 		--EditorGUI.indentLevel;
-		EditorGUILayout.LabelField("默认属性如下：");
+		EditorGUILayout.LabelField("父类属性如下：");
 		++EditorGUI.indentLevel;
 		base.OnInspectorGUI();
 		--EditorGUI.indentLevel;
