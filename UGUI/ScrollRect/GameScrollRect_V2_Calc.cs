@@ -29,7 +29,7 @@ namespace Game.Core
 			public RectTransform.Edge SecondEdge = RectTransform.Edge.Top;
 			//位置与大小
 			public Rect Rect { get; private set; }
-			public Rect RectReal;
+			public Rect RectReal { get; private set; }
 			/// <summary>
 			/// 设置进入视野的GO的Transform信息
 			/// </summary>
@@ -56,54 +56,10 @@ namespace Game.Core
 			public void SetRect(Rect rect)
 			{
 				Rect = rect;
-				RectReal = rect;
 			}
 			public void RefreshRealRect(Vector2 contentSize, RectTransform.Edge firstDir, RectTransform.Edge secondDir)
 			{
-// 				switch (firstDir)
-// 				{
-// 					case RectTransform.Edge.Left:
-// 						break;
-// 					case RectTransform.Edge.Right:
-// 						RectReal.x = contentSize.x - Rect.width - Rect.x;
-// 						break;
-// 					default:
-// 						Debug.LogError("RefreshRealRec hEdge Error:" + firstDir);
-// 						break;
-// 				}
-// 				switch (secondDir)
-// 				{
-// 					case RectTransform.Edge.Top:
-// 						RectReal.y = -Rect.height - Rect.y;
-// 						break;
-// 					case RectTransform.Edge.Bottom:
-// 						RectReal.y = Rect.height + Rect.y - contentSize.y;
-// 						break;
-// 					default:
-// 						Debug.LogError("RefreshRealRec vEdge Error:" + secondDir);
-// 						break;
-// 				}
-
-				switch (firstDir)
-				{
-					case RectTransform.Edge.Right:
-						if(secondDir == RectTransform.Edge.Bottom)
-						{
-							FirstEdge = RectTransform.Edge.Left;
-							SecondEdge = RectTransform.Edge.Top;
-						}
-						else if(secondDir == RectTransform.Edge.Top)
-						{
-							FirstEdge = RectTransform.Edge.Left;
-							SecondEdge = RectTransform.Edge.Bottom;
-						}
-						break;
-					case RectTransform.Edge.Left:
-						break;
-					case RectTransform.Edge.Bottom:
-					case RectTransform.Edge.Top:
-						break;
-				}
+				RectReal = new Rect(Rect.x, Rect.y + Rect.height - contentSize.y, Rect.width, Rect.height);
 			}
 			/// <summary>
 			/// 判断是否相交
@@ -112,7 +68,7 @@ namespace Game.Core
 			/// <returns></returns>
 			public Boolean Overlaps(DataPos otherData)
 			{
-				return RectReal.Overlaps(otherData.RectReal);
+				return Rect.Overlaps(otherData.Rect);
 			}
 			/// <summary>
 			/// 判断是否相交
@@ -121,7 +77,7 @@ namespace Game.Core
 			/// <returns></returns>
 			public Boolean Overlaps(Rect otherRect)
 			{
-				return RectReal.Overlaps(otherRect);
+				return Rect.Overlaps(otherRect);
 			}
 			public override String ToString()
 			{
@@ -460,14 +416,14 @@ namespace Game.Core
 			//这里我们要求content左上角相对view节点左上角的位移，现在默认view是content的父节点
 			//1。anchoredPosition是pivot相对于&&&四个锚点的中心&&&的位移
 			//我们要用三个向量加一起计算出偏移量
-			var ctPivot2TopLeftOffset = new Vector2(-content.pivot.x, 1 - content.pivot.y) * content.rect.size;
+			var ctPivot2TopLeftOffset = new Vector2(-content.pivot.x, - content.pivot.y) * content.rect.size;
 			var ctParentTopLeft2Anchored = new Vector2(content.anchorMin.x + content.anchorMax.x, content.anchorMin.y + content.anchorMax.y - 2) * viewSize * 0.5f;
 			var ctAnchoredPos = ctParentTopLeft2Anchored + ctPivot2TopLeftOffset + content.anchoredPosition;
 
 			//Debug.LogError("PIVOT：" + (content.pivot * viewSize).ToString() + ",pos:" + content.anchoredPosition );
 			Rect viewRect = new Rect(-ctAnchoredPos.x - ViewSizeMinExt.x, -viewSize.y - ctAnchoredPos.y - ViewSizeMinExt.y, viewSize.x + ViewSizeMinExt.x + ViewSizeMaxExt.x, viewSize.y + ViewSizeMinExt.y + ViewSizeMaxExt.y);
-			Debug.LogError(viewRect);
-			Debug.LogError(viewport.rect);
+			//Debug.LogError(viewRect);
+			//Debug.LogError(viewport.rect);
 			foreach (var dp in DataAndPosProviders)
 			{
 				if (dp.Overlaps(viewRect))
@@ -561,7 +517,7 @@ namespace Game.Core
 			Vector2 alignOffset = Vector2.zero;
 			if (vertical)
 			{
-				tarPos.y = -tarDP.Rect.position.y;
+				tarPos.y = ct.rect.size.y - tarDP.Rect.position.y - tarDP.Rect.height;
 				switch (vAlignment)
 				{
 					case VerticalAlignType.None:

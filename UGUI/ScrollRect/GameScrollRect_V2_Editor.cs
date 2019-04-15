@@ -197,7 +197,7 @@ class GameScrollRect_V2_Editor : ScrollRectEditor
 						{
 							for (var i = 0; i < edges.Length; i++)
 							{
-								if ((RectTransform.Edge)edges.GetValue(i) == RectTransform.Edge.Top && SecondEdge_SP.enumValueIndex != i)
+								if ((RectTransform.Edge)edges.GetValue(i) == RectTransform.Edge.Bottom && SecondEdge_SP.enumValueIndex != i)
 								{
 									SecondEdge_SP.enumValueIndex = i;
 									break;
@@ -222,7 +222,7 @@ class GameScrollRect_V2_Editor : ScrollRectEditor
 						{
 							for (var i = 0; i < edges.Length; i++)
 							{
-								if ((RectTransform.Edge)edges.GetValue(i) == RectTransform.Edge.Left && SecondEdge_SP.enumValueIndex != i)
+								if ((RectTransform.Edge)edges.GetValue(i) == RectTransform.Edge.Right && SecondEdge_SP.enumValueIndex != i)
 								{
 									SecondEdge_SP.enumValueIndex = i;
 									break;

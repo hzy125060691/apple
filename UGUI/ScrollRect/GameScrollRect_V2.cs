@@ -40,9 +40,9 @@ namespace Game.Core
 			Lower
 		}
 		[SerializeField]
-		public RectTransform.Edge FirstEdge;
+		public RectTransform.Edge FirstEdge = RectTransform.Edge.Right;
 		[SerializeField]
-		public RectTransform.Edge SecondEdge;
+		public RectTransform.Edge SecondEdge = RectTransform.Edge.Bottom;
 		//生成的列表的布局方式
 		[SerializeField]
 		public LayoutType LayoutMode = LayoutType.Grid;
@@ -82,10 +82,10 @@ namespace Game.Core
 
 		//运行时列表的行数
 		[NonSerialized]
-		public Int32 RowCount = 1;
+		private Int32 RowCount = 1;
 		//运行时列表的列数
 		[NonSerialized]
-		public Int32 ColumnCount = 1;
+		private Int32 ColumnCount = 1;
 		[NonSerialized]
 		private Boolean IsDPsChanged = false;//DataAndPosProviders列表是否有变化
 		[NonSerialized]
@@ -217,7 +217,7 @@ namespace Game.Core
 			if (EmptyRoot == null)
 			{
 				GameObject empty = new GameObject("EmptyRecycle");
-				empty.transform.SetParent(viewport?? this.transform);
+				empty.transform.SetParent(viewport ?? this.transform);
 				RectTransform emptyrect = empty.AddComponent<RectTransform>();
 				emptyrect.sizeDelta = new Vector2(0f, 0f);
 				emptyrect.localScale = Vector3.one;
@@ -381,7 +381,7 @@ namespace Game.Core
 				return Vector2.negativeInfinity;
 			}
 			RefreshContentSize();
-			return DataAndPosProviders[index].Rect.position;
+			return DataAndPosProviders[index].RectReal.position;
 		}
 		/// <summary>
 		/// 获得某个item的位置
@@ -400,7 +400,7 @@ namespace Game.Core
 					dp = DataAndPosProviders[i];
 					if (dp.VisableGO == go)
 					{
-						ret = dp.Rect.position;
+						ret = dp.RectReal.position;
 						return true;
 					}
 				}
@@ -425,7 +425,7 @@ namespace Game.Core
 					dp = DataAndPosProviders[i];
 					if (dp.Data == data)
 					{
-						ret = dp.Rect.position;
+						ret = dp.RectReal.position;
 						return true;
 					}
 				}
